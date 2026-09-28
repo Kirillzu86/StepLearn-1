@@ -2,25 +2,15 @@
 
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
+import { FiSearch, FiSettings, FiBell, FiChevronDown } from 'react-icons/fi';
 import './StyleHeader.css';
 
 const Header: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const [currentUser, setCurrentUser] = useState<any>(null);
+    const [searchQuery, setSearchQuery] = useState('');
 
-    // Вешаем клавиатурное сокращение Shift+S для прокрутки вниз
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if (e.shiftKey && (e.key === 'S' || e.key === 's')) {
-                window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-            }
-        };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
-    }, []);
-
-    // Обновляем `currentUser` при смене маршрута (вход/выход делает navigate)
     useEffect(() => {
         const raw = localStorage.getItem('currentUser');
         try {
@@ -30,7 +20,6 @@ const Header: React.FC = () => {
         }
     }, [location]);
 
-    // Слушаем события storage для обновления в других вкладках
     useEffect(() => {
         const onStorage = (e: StorageEvent) => {
             if (e.key === 'currentUser') {
@@ -41,8 +30,6 @@ const Header: React.FC = () => {
                 }
             }
         };
-        window.addEventListener('storage', onStorage);
-        // Слушаем кастомное событие для обновления в той же вкладке
         const onCurrentUserChanged = (ev: Event) => {
             try {
                 const ce = ev as CustomEvent;
@@ -51,7 +38,6 @@ const Header: React.FC = () => {
                     return;
                 }
             } catch {}
-            // fallback: прочитаем из localStorage
             const raw = localStorage.getItem('currentUser');
             try {
                 setCurrentUser(raw ? JSON.parse(raw) : null);
@@ -59,6 +45,7 @@ const Header: React.FC = () => {
                 setCurrentUser(null);
             }
         };
+        window.addEventListener('storage', onStorage);
         window.addEventListener('currentUserChanged', onCurrentUserChanged as EventListener);
         return () => {
             window.removeEventListener('storage', onStorage);
@@ -66,57 +53,83 @@ const Header: React.FC = () => {
         };
     }, []);
 
-    const path = location.pathname || '/';
+    const handleSearch = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (searchQuery.trim()) {
+            navigate(`/catalog?q=${encodeURIComponent(searchQuery.trim())}`);
+        }
+    };
 
-    const isActive = (p: string) => {
-        if (p === '/') return path === '/';
-        return path.startsWith(p);
+    const getUserName = () => {
+        if (!currentUser) return '';
+        return currentUser.username || currentUser.name || currentUser.email || '';
+    };
+
+    const getUserInitial = () => {
+        const name = getUserName();
+        return name.trim() ? name.trim()[0].toUpperCase() : 'U';
     };
 
     return (
-        <header className="main-header-area">
-            
-            {/* Навигация (имитация верхнего меню Stepik) */}
-            <nav className="header-nav">
-                <span className="nav-logo">StepLearn</span>
-                <Link to="/catalog" className={`nav-link ${isActive('/catalog') ? 'nav-link-active' : ''}`}>Каталог</Link>
-                <Link to="/" className={`nav-link ${isActive('/') ? 'nav-link-active' : ''}`}>Моё обучение</Link>
-                <Link to="/create-course" className={`nav-link ${isActive('/create-course') ? 'nav-link-active' : ''}`}>Преподавание</Link>
-                <Link to="/admin-panel" className={`nav-link ${isActive('/admin-panel') ? 'nav-link-active' : ''}`} style={{ color: '#818cf8', fontWeight: 600 }}>
-                    Учительская / Группы
-                </Link>
-            </nav>
-
-            {/* Поисковая строка и Аватар */}
-            <div className="header-controls">
-                
-
-                {/* 4. Аватарка пользователя */}
-                <div className="user-avatar-container">
-                    <button
-                        className="user-avatar-button"
-                        onClick={() => navigate('/profile')}
-                        aria-label="Открыть профиль"
-                        title="Профиль"
-                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-                    >
-                        {currentUser && currentUser.avatar_url ? (
-                            <img src={currentUser.avatar_url} alt="avatar" className="user-avatar-image" />
-                        ) : (
-                            <span className="user-avatar">
-                                {(() => {
-                                    if (!currentUser) return 'H';
-                                    const name = (currentUser.username || currentUser.name || currentUser.email || '') + '';
-                                    return name.trim() ? name.trim()[0].toUpperCase() : 'H';
-                                })()}
-                            </span>
-                        )}
-                    </button>
+        <header className="sl-header">
+            {/* Logo */}
+            <Link to="/" className="sl-header__logo">
+                <div className="sl-header__logo-icon">
+                    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                        <path d="M14 2L24 8V20L14 26L4 20V8L14 2Z" fill="#4F46E5"/>
+                        <path d="M14 8L19 11V17L14 20L9 17V11L14 8Z" fill="white"/>
+                    </svg>
                 </div>
+                <div className="sl-header__logo-text">
+                    <span className="sl-header__logo-name">StepLearn</span>
+                    <span className="sl-header__logo-tagline">Учись. Развивайся. Достигай.</span>
+                </div>
+            </Link>
+
+            {/* Search */}
+            <form className="sl-header__search" onSubmit={handleSearch}>
+                <FiSearch className="sl-header__search-icon" />
+                <input
+                    type="text"
+                    className="sl-header__search-input"
+                    placeholder="Поиск курсов, тем, преподавателей..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                />
+            </form>
+
+            {/* Right controls */}
+            <div className="sl-header__controls">
+                <button className="sl-header__icon-btn" aria-label="Настройки">
+                    <FiSettings />
+                </button>
+                <button className="sl-header__icon-btn sl-header__icon-btn--notif" aria-label="Уведомления">
+                    <FiBell />
+                    <span className="sl-header__notif-badge">3</span>
+                </button>
+
+                {currentUser ? (
+                    <button
+                        className="sl-header__user"
+                        onClick={() => navigate('/profile')}
+                    >
+                        {currentUser.avatar_url ? (
+                            <img src={currentUser.avatar_url} alt="" className="sl-header__avatar-img" />
+                        ) : (
+                            <span className="sl-header__avatar">{getUserInitial()}</span>
+                        )}
+                        <span className="sl-header__user-name">{getUserName()}</span>
+                        <FiChevronDown className="sl-header__user-chevron" />
+                    </button>
+                ) : (
+                    <div className="sl-header__auth">
+                        <Link to="/login" className="sl-header__auth-login">Войти</Link>
+                        <Link to="/register" className="sl-header__auth-register">Регистрация</Link>
+                    </div>
+                )}
             </div>
         </header>
     );
-
 };
 
 export default Header;

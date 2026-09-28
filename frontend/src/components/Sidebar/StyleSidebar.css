@@ -1,190 +1,219 @@
-.sidebar-container {
-    width: 250px;
-    padding: 10px 0;
-    background-color: #fff; 
-    border-right: 1px solid #ccc;
-    min-height: 100vh; 
-    position: sticky;
-    top: 0;
-    flex-shrink: 0; 
+/* ===== Sidebar ===== */
+.sl-sidebar {
+  width: 240px;
+  min-height: calc(100vh - 64px);
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  padding: 16px 0;
+  flex-shrink: 0;
+  position: sticky;
+  top: 64px;
+  height: calc(100vh - 64px);
+  overflow-y: auto;
 }
 
-.nav-item {
-    display: flex;
-    align-items: center;
-    padding: 10px 20px;
-    font-size: 0.95em;
-    color: #333; 
-    transition: background-color 0.2s;
-    font-weight: 500;
-    text-decoration: none; /* Убираем подчеркивание */
+.sl-sidebar__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 8px;
 }
 
-.nav-item:hover {
-    background-color: #f0f0f0;
+.sl-sidebar__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all var(--transition);
+  position: relative;
 }
 
-/* Стилизация активного/специального пункта */
-.nav-item-special {
-    font-weight: bold;
-    color: #000;
+.sl-sidebar__item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
-.nav-item-active {
-    background-color: #eef2ff;
-    border-left: 4px solid #6366f1;
-    color: #111827;
+.sl-sidebar__item--active {
+  background: var(--primary);
+  color: white !important;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
 }
 
-.nav-icon {
-    margin-right: 15px;
-    font-size: 1.2em;
+.sl-sidebar__item--active .sl-sidebar__item-icon {
+  color: white;
 }
 
-.nav-separator {
-    height: 1px;
-    background-color: #eee;
-    margin: 10px 0;
+.sl-sidebar__item-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: color var(--transition);
 }
 
-.sidebar-footer {
-    padding: 10px 20px;
-    font-size: 0.85em;
-    color: #666;
-    cursor: pointer;
+.sl-sidebar__item:hover .sl-sidebar__item-icon {
+  color: var(--text-primary);
 }
 
-.sidebar-auth-links {
-    padding: 10px 20px;
-    margin-top: 20px;
-    border-top: 1px solid #eee;
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    justify-content: space-between;
+.sl-sidebar__item-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.auth-link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid #e6e6e6;
-    background: #ffffff;
-    color: #111827;
-    font-size: 0.9em;
-    text-decoration: none;
-    width: calc(50% - 4px);
-    box-sizing: border-box;
-    transition: background-color 0.15s, color 0.15s, transform 0.08s;
+.sl-sidebar__badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  background: #EF4444;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
 }
 
-.auth-link:hover {
-    background-color: #f3f4f6;
-    color: #000;
-    transform: translateY(-1px);
+.sl-sidebar__item--active .sl-sidebar__badge {
+  background: rgba(255, 255, 255, 0.3);
 }
 
-/* Make primary-looking register link (second child) */
-.sidebar-auth-links .auth-link:last-child {
-    background: linear-gradient(180deg,#06b6d4,#0ea5a8);
-    color: #fff;
-    border-color: rgba(0,0,0,0.08);
+/* Divider label */
+.sl-sidebar__divider-label {
+  padding: 20px 24px 8px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-.sidebar-auth-links .auth-link:last-child:hover {
-    filter: brightness(0.95);
+.sl-sidebar__extra {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 8px;
 }
 
-.auth-link-user {
-    display: block;
-    padding: 8px 20px;
-    font-size: 0.9em;
-    color: #666;
-    font-weight: bold;
+/* User block at bottom */
+.sl-sidebar__user {
+  margin-top: auto;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.auth-link-button {
-    display: block;
-    width: calc(100% - 40px);
-    margin: 5px 20px 0;
-    padding: 8px;
-    font-size: 0.9em;
-    background: none;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    cursor: pointer;
-    text-align: left;
-    color: #333;
+.sl-sidebar__user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  transition: background var(--transition);
 }
 
-/* Тёмная тема под RegPage / LogPage */
-body[data-theme="dark"] .sidebar-container {
-    background-color: #020617;
-    border-right-color: #1f2937;
+.sl-sidebar__user-info:hover {
+  background: var(--bg-hover);
 }
 
-body[data-theme="dark"] .nav-item {
-    color: #e5e7eb;
+.sl-sidebar__user-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--primary-gradient);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  flex-shrink: 0;
 }
 
-body[data-theme="dark"] .nav-item:hover {
-    background-color: #111827;
+.sl-sidebar__user-avatar-img {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
-body[data-theme="dark"] .nav-item-special {
-    color: #e5e7eb;
+.sl-sidebar__user-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
 }
 
-body[data-theme="dark"] .nav-item-active {
-    background-color: rgba(99,102,241,0.08);
-    border-left-color: #f97316;
-    color: #f9fafb;
+.sl-sidebar__logout {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all var(--transition);
 }
 
-body[data-theme="dark"] .nav-separator {
-    background-color: #1f2937;
+.sl-sidebar__logout:hover {
+  background: #FEE2E2;
+  color: #EF4444;
 }
 
-body[data-theme="dark"] .sidebar-footer {
-    color: #9ca3af;
+/* CTA block for unauthenticated users */
+.sl-sidebar__cta {
+  margin: auto 12px 12px;
+  padding: 20px 16px;
+  background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%);
+  border-radius: var(--radius-lg);
+  color: white;
 }
 
-body[data-theme="dark"] .sidebar-auth-links {
-    border-top-color: #1f2937;
+.sl-sidebar__cta-text {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.4;
+  margin-bottom: 8px;
 }
 
-body[data-theme="dark"] .auth-link {
-    color: #e5e7eb;
-    background: transparent;
-    border-color: #374151;
+.sl-sidebar__cta-desc {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.5;
+  margin-bottom: 14px;
 }
 
-body[data-theme="dark"] .auth-link:hover {
-    color: #ffffff;
-    background-color: rgba(255,255,255,0.03);
+.sl-sidebar__cta-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 20px;
+  background: var(--primary);
+  color: white;
+  border-radius: var(--radius-full);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background var(--transition);
 }
 
-body[data-theme="dark"] .sidebar-auth-links .auth-link:last-child {
-    background: linear-gradient(180deg,#0891b2,#0b7285);
-    color: #fff;
-    border-color: rgba(255,255,255,0.06);
-}
-
-body[data-theme="dark"] .sidebar-auth-links .auth-link:last-child:hover {
-    filter: brightness(0.95);
-}
-
-body[data-theme="dark"] .auth-link-user {
-    color: #9ca3af;
-}
-
-body[data-theme="dark"] .auth-link-button {
-    color: #e5e7eb;
-    border-color: #374151;
-}
-
-body[data-theme="dark"] .auth-link-button:hover {
-    background-color: #1f2937;
+.sl-sidebar__cta-btn:hover {
+  background: var(--primary-hover);
+  color: white;
 }
