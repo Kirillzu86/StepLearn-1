@@ -59,19 +59,28 @@ body[data-theme="dark"] .course-description-large {
 }
 
 .start-course-btn {
-    background-color: #000;
-    color: #fff;
+    background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%);
+    color: #FFFFFF !important;
     border: none;
     padding: 12px 24px;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 1rem;
     cursor: pointer;
-    font-weight: 600;
+    font-weight: 700;
+    box-shadow: 0 4px 14px rgba(30, 27, 75, 0.35);
+    transition: all 0.2s ease;
 }
 
 body[data-theme="dark"] .start-course-btn {
-    background-color: #f97316;
-    color: #111827;
+    background: linear-gradient(135deg, #312E81 0%, #4338CA 100%);
+    color: #FFFFFF !important;
+    box-shadow: 0 4px 14px rgba(49, 46, 129, 0.45);
+}
+
+.start-course-btn:hover {
+    background: linear-gradient(135deg, #312E81 0%, #4338CA 100%);
+    color: #FFFFFF !important;
+    transform: translateY(-1px);
 }
 
 .lessons-list {
@@ -605,56 +614,98 @@ body[data-theme="dark"] .group-indicator-banner {
 
 .modular-nav {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     overflow-x: auto;
-    padding-bottom: 8px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 4px 4px 12px 4px;
+    border-bottom: 1px solid var(--border-light);
 }
 
+/* Модульные кнопки в светлой теме */
 .module-nav-item {
-    background: rgba(30, 41, 59, 0.4);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #94a3b8;
-    padding: 10px 18px;
-    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    color: #1f2937;
+    padding: 12px 20px;
+    border-radius: 10px;
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s ease;
     display: inline-flex;
     align-items: center;
     gap: 8px;
     white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .module-nav-item:hover {
-    color: #f8fafc;
-    border-color: rgba(255, 255, 255, 0.25);
+    background: #f3f4f6;
+    border-color: #9ca3af;
+    color: #111827;
 }
 
-.module-nav-item.active {
-    background: #6366f1;
+/* Модульные кнопки в тёмной теме */
+body[data-theme="dark"] .module-nav-item {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+body[data-theme="dark"] .module-nav-item:hover {
+    background: #334155;
     color: #ffffff;
-    border-color: #6366f1;
+}
+
+/* Активная кнопка модуля — темный индиго со 100% читаемым белым текстом */
+.module-nav-item.active {
+    background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%) !important;
+    color: #FFFFFF !important;
+    border-color: #1E1B4B !important;
+    box-shadow: 0 4px 14px rgba(30, 27, 75, 0.35);
+}
+
+.module-nav-item.active span {
+    color: #FFFFFF !important;
+}
+
+body[data-theme="dark"] .module-nav-item.active {
+    background: linear-gradient(135deg, #312E81 0%, #4F46E5 100%) !important;
+    color: #FFFFFF !important;
+    border-color: #4F46E5 !important;
+    box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4);
 }
 
 .module-nav-item.locked {
-    opacity: 0.65;
+    opacity: 0.9;
+    background: #f1f5f9;
+    color: #334155;
+}
+
+body[data-theme="dark"] .module-nav-item.locked {
+    background: #0f172a;
+    color: #cbd5e1;
 }
 
 .module-nav-item.completed {
-    border-color: rgba(34, 197, 94, 0.5);
+    border-color: #10b981;
 }
 
 /* Экран блокировки модуля */
 .module-locked-screen {
-    background: rgba(30, 41, 59, 0.5);
-    border: 1px dashed rgba(245, 158, 11, 0.4);
+    background: #ffffff;
+    border: 2px dashed #f59e0b;
     border-radius: 16px;
     padding: 48px 32px;
     text-align: center;
     max-width: 720px;
     margin: 30px auto;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+}
+
+body[data-theme="dark"] .module-locked-screen {
+    background: #1e293b;
+    border-color: rgba(245, 158, 11, 0.5);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 .locked-icon-large {
@@ -664,35 +715,55 @@ body[data-theme="dark"] .group-indicator-banner {
 }
 
 .locked-title {
-    font-size: 1.5rem;
+    font-size: 1.6rem;
     font-weight: 700;
     margin-bottom: 12px;
-    color: #f8fafc;
+    color: #111827;
+}
+
+body[data-theme="dark"] .locked-title {
+    color: #f9fafb;
 }
 
 .locked-description {
-    font-size: 1rem;
-    color: #94a3b8;
+    font-size: 1.05rem;
+    color: #374151;
     line-height: 1.6;
     margin-bottom: 24px;
+    font-weight: 500;
+}
+
+body[data-theme="dark"] .locked-description {
+    color: #cbd5e1;
 }
 
 .group-progress-box {
-    background: rgba(15, 23, 42, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
     border-radius: 12px;
-    padding: 18px;
+    padding: 20px;
     text-align: left;
     margin-top: 20px;
+    color: #1e293b;
+}
+
+body[data-theme="dark"] .group-progress-box {
+    background: #0f172a;
+    border-color: #334155;
+    color: #f1f5f9;
 }
 
 .celebrate-banner {
     background: rgba(34, 197, 94, 0.15);
     border: 1px solid rgba(34, 197, 94, 0.4);
-    color: #34d399;
+    color: #166534;
     padding: 14px 20px;
     border-radius: 10px;
     font-weight: 600;
     margin-bottom: 20px;
     text-align: center;
+}
+
+body[data-theme="dark"] .celebrate-banner {
+    color: #34d399;
 }

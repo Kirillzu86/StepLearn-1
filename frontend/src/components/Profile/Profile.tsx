@@ -184,15 +184,13 @@ function Profile(props: ProfileProps) {
 
   if (loading) {
     return (
-      <div style={backgroundStyle}>
-        <div className="app-main-view">
-          <Header />
-          <div className="app-layout">
-            <Sidebar />
-            <div className="content-area">
-              <div className="profile-loading">Загрузка...</div>
-            </div>
-          </div>
+      <div className="sl-app">
+        <Header />
+        <div className="sl-layout">
+          <Sidebar />
+          <main className="sl-main">
+            <div className="profile-loading">Загрузка...</div>
+          </main>
         </div>
       </div>
     );
@@ -206,15 +204,13 @@ function Profile(props: ProfileProps) {
   const displayInitial = displayName.charAt(0).toUpperCase();
 
   return (
-    <div style={backgroundStyle}>
-      <div className="app-main-view">
-        <Header />
-        <div className="app-layout">
-          <Sidebar />
-          <div className="content-area">
+    <div className="sl-app">
+      <Header />
+      <div className="sl-layout">
+        <Sidebar />
+        <main className="sl-main">
             <div className="content-header">
               <h1 className="main-title">Профиль</h1>
-              <button className="theme-toggle-btn" onClick={props.toggleTheme} />
             </div>
             <div className="profile-content" style={{ marginTop: 0 }}>
         <div className="profile-card">
@@ -278,9 +274,18 @@ function Profile(props: ProfileProps) {
 
             <div className="profile-actions">
               {!editing ? (
-                <button className="profile-button profile-button-primary" onClick={() => setEditing(true)}>
-                  Редактировать профиль
-                </button>
+                <>
+                  <button className="profile-button profile-button-primary" onClick={() => setEditing(true)}>
+                    Редактировать профиль
+                  </button>
+                  <button className="profile-button profile-button-secondary" style={{ background: '#EF4444', color: '#fff' }} onClick={() => {
+                    localStorage.removeItem('currentUser');
+                    try { window.dispatchEvent(new CustomEvent('currentUserChanged')); } catch {}
+                    navigate('/login');
+                  }}>
+                    Выйти из аккаунта
+                  </button>
+                </>
               ) : (
                 <>
                   <button className="profile-button profile-button-primary" onClick={handleSave}>
@@ -294,11 +299,10 @@ function Profile(props: ProfileProps) {
             </div>
           </div>
         </div>
-            </div>
-          </div>
-        </div>
       </div>
-    </div>
+    </main>
+  </div>
+</div>
   );
 }
 

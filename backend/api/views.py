@@ -129,6 +129,33 @@ def login(request):
     return Response(UserSerializer(user).data)
 
 
+@api_view(['POST'])
+def teacher_register(request):
+    """Регистрация преподавательского аккаунта — принудительно ставит role='teacher'"""
+    data = request.data.copy()
+    data['role'] = 'teacher'
+    serializer = RegisterSerializer(data=data)
+    serializer.is_valid(raise_exception=True)
+    user = serializer.save()
+    return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+def teacher_login(request):
+    """Вход для преподавателей — проверяет что пользователь имеет роль teacher/admin"""
+    serializer = LoginSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    user = serializer.validated_data['user']
+    if not user.is_teacher_or_admin:
+        return Response(
+            {'detail': 'Данный аккаунт не является преподавательским. Используйте обычный вход.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    user.last_activity = timezone.now()
+    user.save(update_fields=['last_activity'])
+    return Response(UserSerializer(user).data)
+
+
 @api_view(['GET', 'PUT', 'PATCH'])
 def user_detail(request, user_id):
     try:

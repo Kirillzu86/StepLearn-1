@@ -22,6 +22,7 @@ const mainNavItems: NavItem[] = [
 ];
 
 const extraNavItems: NavItem[] = [
+    { title: 'Панель учителя', icon: FiUsers, path: '/admin-panel' },
     { title: 'Уведомления', icon: FiBell, path: '/notifications' },
     { title: 'Настройки', icon: FiSettings, path: '/settings' },
     { title: 'Помощь', icon: FiHelpCircle, path: '/help' },

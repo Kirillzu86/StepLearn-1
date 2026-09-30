@@ -51,17 +51,17 @@ body[data-theme="dark"] .type-tab-btn:hover {
 }
 
 .type-tab-btn.active {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #ffffff;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%);
+  border-color: #312E81;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(30, 27, 75, 0.35);
 }
 
 body[data-theme="dark"] .type-tab-btn.active {
-  background: #f97316;
-  border-color: #f97316;
-  color: #111827;
-  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+  background: linear-gradient(135deg, #312E81 0%, #4F46E5 100%);
+  border-color: #4F46E5;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
 }
 
 /* Зона Drag & Drop для .md */

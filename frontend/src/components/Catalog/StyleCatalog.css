@@ -10,7 +10,7 @@
 
 .sl-catalog-header__title {
   font-size: 1.5rem;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--text-primary);
   white-space: nowrap;
 }
@@ -24,13 +24,13 @@
   border: 1px solid var(--border-light);
   border-radius: var(--radius-full);
   padding: 0 16px;
-  height: 40px;
+  height: 42px;
   transition: border-color var(--transition), box-shadow var(--transition);
 }
 
 .sl-catalog-header__search:focus-within {
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
 }
 
 .sl-catalog-header__search-icon {
@@ -42,7 +42,7 @@
   flex: 1;
   border: none;
   background: transparent;
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   color: var(--text-primary);
   outline: none;
   height: 100%;
@@ -55,19 +55,19 @@
 /* Filters */
 .sl-catalog-filters {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 20px;
   flex-wrap: wrap;
 }
 
 .sl-catalog-filter {
-  padding: 8px 18px;
+  padding: 8px 20px;
   border-radius: var(--radius-full);
   font-size: 0.85rem;
-  font-weight: 500;
+  font-weight: 600;
   border: 1px solid var(--border-light);
   background: var(--bg-card);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   cursor: pointer;
   transition: all var(--transition);
 }
@@ -75,12 +75,20 @@
 .sl-catalog-filter:hover {
   border-color: var(--primary);
   color: var(--primary);
+  background: var(--bg-hover);
 }
 
 .sl-catalog-filter--active {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
+  background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%) !important;
+  color: #FFFFFF !important;
+  border-color: transparent !important;
+  box-shadow: 0 4px 12px rgba(30, 27, 75, 0.35);
+}
+
+body[data-theme="dark"] .sl-catalog-filter--active {
+  background: linear-gradient(135deg, #312E81 0%, #4F46E5 100%) !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
 }
 
 /* Toolbar */
@@ -92,17 +100,18 @@
 }
 
 .sl-catalog-toolbar__count {
-  font-size: 0.85rem;
-  font-weight: 500;
+  font-size: 0.88rem;
+  font-weight: 600;
   color: var(--text-secondary);
 }
 
 .sl-catalog-toolbar__select {
-  padding: 6px 12px;
-  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-light);
   background: var(--bg-card);
   font-size: 0.85rem;
+  font-weight: 600;
   color: var(--text-primary);
   cursor: pointer;
   outline: none;
@@ -141,10 +150,11 @@
 .sl-catalog-card__image-bg {
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, var(--primary-light), #E0E7FF);
+  background: linear-gradient(135deg, #312E81 0%, #4338CA 100%);
   display: flex;
   align-items: center;
   justify-content: center;
+  color: white;
 }
 
 .sl-catalog-card__body {
@@ -165,28 +175,28 @@
   font-size: 0.7rem;
   padding: 2px 10px;
   border-radius: var(--radius-full);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .sl-catalog-card__type--text {
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(59, 130, 246, 0.15);
   color: #2563EB;
 }
 
 .sl-catalog-card__type--test {
-  background: rgba(245, 158, 11, 0.1);
+  background: rgba(245, 158, 11, 0.15);
   color: #D97706;
 }
 
 .sl-catalog-card__enrolled {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   color: #10B981;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .sl-catalog-card__title {
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 6px;
   line-height: 1.3;
@@ -218,19 +228,20 @@
   display: flex;
   gap: 10px;
   font-size: 0.75rem;
+  font-weight: 600;
   color: var(--text-muted);
 }
 
 .sl-catalog-card__price {
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 700;
   padding: 3px 10px;
   border-radius: var(--radius-full);
 }
 
 .sl-catalog-card__price--free {
   color: #10B981;
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(16, 185, 129, 0.15);
 }
 
 .sl-catalog-card__price--paid {
@@ -240,7 +251,7 @@
 
 .sl-catalog-card__price--enrolled {
   color: #3B82F6;
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(59, 130, 246, 0.15);
 }
 
 /* Progress in catalog */
@@ -253,21 +264,21 @@
 
 .sl-catalog-card__progress-bar {
   flex: 1;
-  height: 4px;
+  height: 6px;
   background: var(--bg-input);
-  border-radius: 2px;
+  border-radius: 3px;
   overflow: hidden;
 }
 
 .sl-catalog-card__progress-fill {
   height: 100%;
   background: var(--primary);
-  border-radius: 2px;
+  border-radius: 3px;
   transition: width 0.5s ease;
 }
 
 .sl-catalog-card__progress-text {
-  font-size: 0.7rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 700;
   color: var(--primary);
 }

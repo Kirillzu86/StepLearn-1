@@ -1,6 +1,11 @@
 import { useState, type ChangeEvent, type FormEvent, type SVGProps, type FC } from "react";
-import "./StyleRegPage.css";
-import { ThemeToggle } from "../ThemeToggle/ThemeToggle";
+import { API_URL } from "../../api/api";
+import { useNavigate, Link } from "react-router-dom";
+import Header from "../Header/Header";
+import Sidebar from "../Sidebar/sidebar";
+import "../HomePage/StyleHomePage.css";
+import "../Sidebar/StyleSidebar.css";
+import "../LogPage/StyleLogPage.css";
 
 type IconProps = SVGProps<SVGSVGElement>;
 
@@ -20,13 +25,11 @@ const Icons = {
             <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
         </svg>
     ),
-    // Открытый глаз
     Eye: (props: IconProps) => (
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
             <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>
         </svg>
     ),
-    // ЗАКРЫТЫЙ ГЛАЗ (Веко с ресничками)
     EyeOff: (props: IconProps) => (
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
             <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-10-7-10-7s3-7 10-7a9.12 9.12 0 0 1 4.3 1.07"/>
@@ -50,15 +53,14 @@ interface RegPageProps {
     toggleTheme: () => void;
 }
 
-import { useNavigate } from "react-router-dom";
-
 function RegPage({ theme, toggleTheme }: RegPageProps) {
     const navigate = useNavigate();
+    const [formData, setFormData] = useState({ username: '', email: '', password: '', confirmPassword: '' });
     const [message, setMessage] = useState({ text: '', type: '' });
     const [errors, setErrors] = useState({ username: false, email: false, password: false, confirmPassword: false });
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
-    const isDarkTheme = theme === "dark";
+    const [submitting, setSubmitting] = useState(false);
 
     const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
@@ -70,7 +72,7 @@ function RegPage({ theme, toggleTheme }: RegPageProps) {
     const handleFormSubmit = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         const { username, email, password, confirmPassword } = formData;
-        if (!username || !email || !password || !confirmPassword) {
+        if (!username.trim() || !email.trim() || !password || !confirmPassword) {
             setMessage({ text: 'Заполните все поля', type: 'error' });
             return;
         }
@@ -82,58 +84,74 @@ function RegPage({ theme, toggleTheme }: RegPageProps) {
             setMessage({ text: 'Пароли не совпадают', type: 'error' });
             return;
         }
+        setSubmitting(true);
         try {
             const base = API_URL ? API_URL.replace(/\/$/, '') : (typeof window !== 'undefined' ? window.location.origin : '');
-            const res = await fetch(`${base}/auth/register`, {
+            
+            // Попробуем отправить запрос на бесплатный сервер регистрации
+            let res = await fetch(`${base}/auth/register`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ username, email, password }),
             });
 
+            if (!res.ok && res.status === 404) {
+                // Запасной путь для /api/auth/register
+                res = await fetch(`${base}/api/auth/register`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, email, password }),
+                });
+            }
+
             if (!res.ok) {
-                // Try to parse JSON error body, otherwise fall back to text for debugging
                 let data: any = {};
                 try {
                     data = await res.json();
-                } catch (e) {
-                    data.detail = await res.text().catch(() => `HTTP ${res.status}`);
+                } catch {
+                    data.detail = await res.text().catch(() => `Ошибка ${res.status}`);
                 }
-                console.error('Registration failed', res.status, data);
-                throw new Error(data.detail || "Не удалось создать аккаунт");
+                const errorMsg = typeof data.detail === 'string' ? data.detail : 
+                    (Array.isArray(data.detail) ? data.detail[0]?.msg : null) || 
+                    (data.username ? data.username[0] : null) || 
+                    (data.email ? data.email[0] : null) || 
+                    "Не удалось создать аккаунт";
+                throw new Error(errorMsg);
             }
 
             const user = await res.json();
-            // сохраняем текущего пользователя в localStorage
             window.localStorage.setItem("currentUser", JSON.stringify(user));
-            setMessage({ text: `Аккаунт успешно создан для ${user.username}!`, type: 'success' });
-            navigate('/');
+            try {
+                window.dispatchEvent(new CustomEvent('currentUserChanged', { detail: user }));
+            } catch {
+                window.dispatchEvent(new Event('currentUserChanged'));
+            }
+            setMessage({ text: `Аккаунт успешно создан!`, type: 'success' });
+            setTimeout(() => navigate('/'), 800);
         } catch (err: any) {
             setMessage({ text: err.message || 'Ошибка при регистрации', type: 'error' });
+        } finally {
+            setSubmitting(false);
         }
     };
 
-    const renderInputField = (label: string, type: string, name: keyof typeof formData, Icon: FC<IconProps>, isPass = false, visible = false, toggle = () => {}) => {
+    const renderInputField = (label: string, type: string, name: keyof typeof formData, Icon: FC<IconProps>, placeholder: string, isPass = false, visible = false, toggle = () => {}) => {
         const hasError = errors[name];
         return (
-            <div className="input-group">
-                <label className="input-label" style={{ color: isDarkTheme ? (hasError ? '#f87171' : '#9ca3af') : (hasError ? '#dc2626' : '#57534e') }}>{label}</label>
-                <div className="input-wrapper">
+            <div className="sl-auth-input-group">
+                <label className="sl-auth-label">{label}</label>
+                <div className="sl-auth-input-wrapper">
+                    <span className="sl-auth-input-icon sl-auth-input-icon--left"><Icon /></span>
                     <input
                         type={isPass ? (visible ? 'text' : 'password') : type}
                         name={name}
                         value={formData[name]}
                         onChange={handleChange}
-                        className="form-input"
-                        data-error={hasError}
-                        style={{
-                            backgroundColor: isDarkTheme ? '#1f2937' : '#f3f4f6',
-                            color: isDarkTheme ? 'white' : '#111827',
-                            borderColor: hasError ? '#ef4444' : (isDarkTheme ? '#4b5563' : '#d1d5db')
-                        }}
+                        className={`sl-auth-input ${hasError ? 'sl-auth-input--error' : ''}`}
+                        placeholder={placeholder}
                     />
-                    <span className="input-icon left-icon" style={{ color: isDarkTheme ? '#6b7280' : '#4b5563' }}><Icon /></span>
                     {isPass && (
-                        <button type="button" onClick={toggle} className="input-icon right-icon" style={{ color: isDarkTheme ? '#9ca3af' : '#4b5563' }}>
+                        <button type="button" onClick={toggle} className="sl-auth-input-icon sl-auth-input-icon--right" tabIndex={-1}>
                             {visible ? <Icons.EyeOff /> : <Icons.Eye />}
                         </button>
                     )}
@@ -143,36 +161,52 @@ function RegPage({ theme, toggleTheme }: RegPageProps) {
     };
 
     return (
-        <div className="log-page-container" style={{ 
-            backgroundColor: isDarkTheme ? '#030712' : '#f8fafc',
-            backgroundImage: isDarkTheme ? 'radial-gradient(circle at 50% 0%, #3b82f640, #030712 35%)' : 'radial-gradient(circle at 50% 0%, #e2e8f040, #f8fafc 35%)',
-            animation: 'pulse-spotlight 15s infinite ease-in-out'
-        }}>
-                        <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
+        <div className="sl-app">
+            <Header />
+            <div className="sl-layout">
+                <Sidebar />
+                <main className="sl-main sl-auth-main">
+                    <div className="sl-auth-card">
+                        <div className="sl-auth-header">
+                            <div className="sl-auth-logo-icon">
+                                <svg width="32" height="32" viewBox="0 0 28 28" fill="none">
+                                    <path d="M14 2L24 8V20L14 26L4 20V8L14 2Z" fill="#4F46E5"/>
+                                    <path d="M14 8L19 11V17L14 20L9 17V11L14 8Z" fill="white"/>
+                                </svg>
+                            </div>
+                            <h1 className="sl-auth-title">Регистрация</h1>
+                            <p className="sl-auth-subtitle">Создайте аккаунт и откройте доступ к курсам</p>
+                        </div>
 
-            <div className="form-card" style={{ 
-                backgroundColor: isDarkTheme ? '#111827' : '#ffffff', 
-                color: isDarkTheme ? 'white' : '#0f172a',
-                borderColor: isDarkTheme ? '#1f2937' : '#e2e8f0'
-            }}>
-                <h1 className="brand-title">Регистрация</h1>
-                <p className="form-subtitle">Создать новый аккаунт</p>
+                        {message.text && (
+                            <div className={`sl-auth-alert ${message.type === 'success' ? 'sl-auth-alert--success' : 'sl-auth-alert--error'}`}>
+                                <span className="sl-auth-alert-icon">{message.type === 'success' ? <Icons.Check /> : <Icons.XCircle />}</span>
+                                {message.text}
+                            </div>
+                        )}
 
-                {message.text && (
-                    <div className={`alert-box ${message.type === 'success' ? 'alert-success' : 'alert-error'}`}>
-                        <span className="icon-msg">{message.type === 'success' ? <Icons.Check /> : <Icons.XCircle />}</span>
-                        {message.text}
+                        <form onSubmit={handleFormSubmit} className="sl-auth-form">
+                            {renderInputField('Имя пользователя', 'text', 'username', Icons.User, 'alex_dev')}
+                            {renderInputField('Email', 'email', 'email', Icons.Mail, 'alex@example.com')}
+                            {renderInputField('Пароль', 'password', 'password', Icons.Lock, '••••••••', true, isPasswordVisible, () => setIsPasswordVisible(!isPasswordVisible))}
+                            {renderInputField('Повторите пароль', 'password', 'confirmPassword', Icons.Lock, '••••••••', true, isConfirmPasswordVisible, () => setIsConfirmPasswordVisible(!isConfirmPasswordVisible))}
+
+                            <div className="sl-auth-actions">
+                                <button type="submit" className="sl-auth-submit-btn" disabled={submitting}>
+                                    {submitting ? "Создание аккаунта..." : "Зарегистрироваться"}
+                                </button>
+                            </div>
+                        </form>
+
+                        <div className="sl-auth-footer">
+                            <span>Уже есть аккаунт? </span>
+                            <Link to="/login" className="sl-auth-link">Войти</Link>
+                        </div>
+                        <div className="sl-auth-footer" style={{ marginTop: '8px' }}>
+                            <Link to="/teacher-register" className="sl-auth-link sl-auth-link--secondary">Регистрация для преподавателей →</Link>
+                        </div>
                     </div>
-                )}
-
-                <form onSubmit={handleFormSubmit}>
-                    {renderInputField('Имя пользователя', 'text', 'username', Icons.User)}
-                    {renderInputField('Email', 'email', 'email', Icons.Mail)}
-                    {renderInputField('Пароль', 'password', 'password', Icons.Lock, true, isPasswordVisible, () => setIsPasswordVisible(!isPasswordVisible))}
-                    {renderInputField('Повтор пароля', 'password', 'confirmPassword', Icons.Lock, true, isConfirmPasswordVisible, () => setIsConfirmPasswordVisible(!isConfirmPasswordVisible))}
-                    <button type="submit" className="submit-btn" style={{ backgroundColor: isDarkTheme ? 'white' : '#111827', color: isDarkTheme ? '#111827' : 'white' }}>Зарегистрироваться</button>
-                    <button type="button" className="cancel-btn" style={{ marginLeft: '0.5rem', backgroundColor: isDarkTheme ? '#e5e7eb' : '#374151', color: isDarkTheme ? '#111827' : 'white' }} onClick={() => navigate('/')}>Отмена</button>
-                </form>
+                </main>
             </div>
         </div>
     );

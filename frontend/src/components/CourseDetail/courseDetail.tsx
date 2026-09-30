@@ -422,12 +422,11 @@ function CourseDetail({ theme, toggleTheme }: CourseDetailProps) {
   const hasQuestions = Boolean(course.questions && course.questions.length > 0);
 
   return (
-    <div style={backgroundStyle}>
-      <div className="app-main-view">
-        <Header />
-        <div className="app-layout">
-          <Sidebar />
-          <div className="content-area">
+    <div className="sl-app">
+      <Header />
+      <div className="sl-layout">
+        <Sidebar />
+        <main className="sl-main">
             <div className="content-header">
               {isReadingMode || activeQuestionIndex !== null ? (
                 <button
@@ -446,7 +445,6 @@ function CourseDetail({ theme, toggleTheme }: CourseDetailProps) {
                   ← Назад в каталог
                 </Link>
               )}
-              <button className="theme-toggle-btn" onClick={toggleTheme} />
             </div>
 
             <div className="course-detail-container">
@@ -568,7 +566,7 @@ function CourseDetail({ theme, toggleTheme }: CourseDetailProps) {
                                   }}
                                 />
                               </div>
-                              <p style={{ fontSize: "0.85rem", color: "#94a3b8", margin: "10px 0 0" }}>
+                              <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "10px 0 0" }}>
                                 💡 Доступ откроется автоматически, когда все студенты вашей группы завершат
                                 предыдущий модуль, либо когда преподаватель откроет его вручную в панели
                                 управления.
@@ -596,7 +594,7 @@ function CourseDetail({ theme, toggleTheme }: CourseDetailProps) {
                             {activeLesson.title}
                           </h2>
                           {activeLesson.description && (
-                            <p style={{ color: "#94a3b8", margin: 0 }}>{activeLesson.description}</p>
+                            <p style={{ color: "var(--text-secondary)", margin: 0 }}>{activeLesson.description}</p>
                           )}
                         </div>
 
@@ -941,55 +939,54 @@ function CourseDetail({ theme, toggleTheme }: CourseDetailProps) {
                   </div>
                 </div>
               )}
+
+              {/* Модальное окно оплаты */}
+              {showPayment && course && (
+                <div className="modal-overlay">
+                  <div className="modal-content">
+                    <h2 style={{ marginTop: 0 }}>Оплата курса</h2>
+                    <p style={{ marginBottom: "1rem", color: isDarkTheme ? "#9ca3af" : "#666" }}>
+                      Вы покупаете курс <strong>«{course.title}»</strong>
+                    </p>
+                    <div style={{ fontSize: "1.5rem", fontWeight: "bold", marginBottom: "1.5rem" }}>
+                      {course.price} ₽
+                    </div>
+                    <form onSubmit={handlePaymentSubmit} className="payment-form">
+                      <input
+                        className="payment-input"
+                        placeholder="Номер карты (0000 0000 0000 0000)"
+                        required
+                        pattern="\d*"
+                        minLength={16}
+                      />
+                      <div className="payment-row">
+                        <input className="payment-input" placeholder="MM/YY" required style={{ width: "50%" }} />
+                        <input
+                          className="payment-input"
+                          placeholder="CVC"
+                          required
+                          maxLength={3}
+                          style={{ width: "50%" }}
+                        />
+                      </div>
+                      <button type="submit" className="pay-confirm-btn" disabled={paymentProcessing}>
+                        {paymentProcessing ? "Обработка..." : `Оплатить ${course.price} ₽`}
+                      </button>
+                      <button
+                        type="button"
+                        className="pay-cancel-btn"
+                        onClick={() => setShowPayment(false)}
+                      >
+                        Отмена
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+          </main>
         </div>
       </div>
-
-      {/* Модальное окно оплаты */}
-      {showPayment && course && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h2 style={{ marginTop: 0 }}>Оплата курса</h2>
-            <p style={{ marginBottom: "1rem", color: isDarkTheme ? "#9ca3af" : "#666" }}>
-              Вы покупаете курс <strong>«{course.title}»</strong>
-            </p>
-            <div style={{ fontSize: "1.5rem", fontWeight: "bold", marginBottom: "1.5rem" }}>
-              {course.price} ₽
-            </div>
-            <form onSubmit={handlePaymentSubmit} className="payment-form">
-              <input
-                className="payment-input"
-                placeholder="Номер карты (0000 0000 0000 0000)"
-                required
-                pattern="\d*"
-                minLength={16}
-              />
-              <div className="payment-row">
-                <input className="payment-input" placeholder="MM/YY" required style={{ width: "50%" }} />
-                <input
-                  className="payment-input"
-                  placeholder="CVC"
-                  required
-                  maxLength={3}
-                  style={{ width: "50%" }}
-                />
-              </div>
-              <button type="submit" className="pay-confirm-btn" disabled={paymentProcessing}>
-                {paymentProcessing ? "Обработка..." : `Оплатить ${course.price} ₽`}
-              </button>
-              <button
-                type="button"
-                className="pay-cancel-btn"
-                onClick={() => setShowPayment(false)}
-              >
-                Отмена
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
   );
 }
 

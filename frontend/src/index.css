@@ -7,6 +7,11 @@
   --primary-light: #EEF2FF;
   --primary-gradient: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
 
+  /* Dark Button Palette */
+  --btn-dark-bg: #1E1B4B;
+  --btn-dark-hover: #312E81;
+  --btn-dark-text: #FFFFFF;
+
   /* Accents */
   --accent-orange: #F97316;
   --accent-green: #10B981;
@@ -25,7 +30,7 @@
 
   /* Text */
   --text-primary: #111827;
-  --text-secondary: #6B7280;
+  --text-secondary: #4B5563;
   --text-muted: #9CA3AF;
   --text-white: #FFFFFF;
   --text-link: #4F46E5;
@@ -61,6 +66,36 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Dark Theme Theme Variables */
+body[data-theme="dark"] {
+  --primary: #6366F1;
+  --primary-hover: #4F46E5;
+  --primary-light: rgba(99, 102, 241, 0.2);
+  --primary-gradient: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+
+  --btn-dark-bg: #1E1B4B;
+  --btn-dark-hover: #312E81;
+  --btn-dark-text: #FFFFFF;
+
+  --bg-page: #0F172A;
+  --bg-card: #1E293B;
+  --bg-sidebar: #1E293B;
+  --bg-header: #1E293B;
+  --bg-input: #0F172A;
+  --bg-hover: #334155;
+  --bg-badge: rgba(99, 102, 241, 0.25);
+
+  --text-primary: #F8FAFC;
+  --text-secondary: #CBD5E1;
+  --text-muted: #94A3B8;
+  --text-white: #FFFFFF;
+  --text-link: #818CF8;
+
+  --border-light: #334155;
+  --border-medium: #475569;
+  --border-focus: #6366F1;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -87,6 +122,34 @@ button,
 textarea,
 select {
   font-family: 'Inter', sans-serif;
+}
+
+/* Global Select & Option Dropdown Readability Fix */
+select option,
+option {
+  background-color: #FFFFFF !important;
+  color: #111827 !important;
+}
+
+body[data-theme="dark"] select option,
+body[data-theme="dark"] option {
+  background-color: #1E293B !important;
+  color: #F8FAFC !important;
+}
+
+body[data-theme="light"] select option,
+body[data-theme="light"] option {
+  background-color: #FFFFFF !important;
+  color: #111827 !important;
+}
+
+/* Global button readability standards */
+button {
+  cursor: pointer;
+}
+
+button:focus {
+  outline: none;
 }
 
 a {

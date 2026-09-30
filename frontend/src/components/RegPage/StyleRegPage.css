@@ -1,9 +1,1 @@
-.form-input {
-    width: 100%;
-    padding: 0.6rem 2.5rem 0.6rem 3rem; /* extra left padding to avoid icon overlap */
-    border-radius: 0.6rem;
-    font-size: 0.95rem;
-    outline: none;
-    box-sizing: border-box;
-    transition: all 0.2s;
-}
+@import "../LogPage/StyleLogPage.css";

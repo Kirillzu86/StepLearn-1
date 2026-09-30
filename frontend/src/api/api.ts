@@ -31,8 +31,34 @@ export async function getUsers() {
   return Array.isArray(data) ? data : [];
 }
 
+export function getCustomCourses() {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem("custom_created_courses") : null;
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomCourse(course: any) {
+  try {
+    if (typeof window === 'undefined') return;
+    const existing = getCustomCourses();
+    const updated = [course, ...existing.filter((c: any) => c.id !== course.id)];
+    localStorage.setItem("custom_created_courses", JSON.stringify(updated));
+    try {
+      window.dispatchEvent(new CustomEvent('coursesChanged', { detail: course }));
+    } catch {
+      window.dispatchEvent(new Event('coursesChanged'));
+    }
+  } catch (e) {
+    console.error("Error saving custom course:", e);
+  }
+}
+
 export async function fetchCourses(query?: string, timestamp?: number) {
   const urlStr = `${getBase()}/v1/courses`;
+  let apiCourses: any[] = [];
   try {
     const url = new URL(urlStr, typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:8000');
     if (timestamp) url.searchParams.set('_t', String(timestamp));
@@ -44,21 +70,25 @@ export async function fetchCourses(query?: string, timestamp?: number) {
     const res = await fetch(url.toString(), { signal: controller.signal });
     clearTimeout(id);
 
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`Error: ${res.status} ${body}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) apiCourses = data;
+      else if (data && Array.isArray(data.data)) apiCourses = data.data;
+      else if (data && Array.isArray(data.results)) apiCourses = data.results;
+      else if (data && Array.isArray(data.courses)) apiCourses = data.courses;
     }
-
-    const data = await res.json();
-    if (Array.isArray(data)) return data;
-    if (data && Array.isArray(data.data)) return data.data;
-    if (data && Array.isArray(data.results)) return data.results;
-    if (data && Array.isArray(data.courses)) return data.courses;
-    return [];
   } catch (e) {
-    console.error("Fetch courses error:", e);
-    throw e;
+    console.error("Fetch courses API error, using local/custom courses:", e);
   }
+
+  const customCourses = getCustomCourses();
+  const mergedMap = new Map();
+  // Merge custom courses first, then API courses
+  [...customCourses, ...apiCourses].forEach((c: any) => {
+    if (c && c.id) mergedMap.set(c.id, c);
+  });
+
+  return Array.from(mergedMap.values());
 }
 
 export async function fetchCourseDetail(courseId: number, userId?: number) {
@@ -177,6 +207,18 @@ export async function createCourseBlock(courseId: number, data: { title: string;
   return res.data;
 }
 
+export async function createCourse(data: {
+  title: string;
+  description?: string;
+  category?: string;
+  level?: string;
+  price?: number;
+}) {
+  const base = getBase();
+  const res = await axios.post(`${base}/v1/courses/create`, data);
+  return res.data;
+}
+
 export async function importCourseMarkdown(courseId: number, data: { title?: string; content: string; block_id?: number }) {
   const base = getBase();
   const res = await axios.post(`${base}/v1/courses/${courseId}/import-markdown`, data);
@@ -267,3 +309,22 @@ export async function toggleStudentStatus(studentId: number) {
   const res = await axios.post(`${base}/v1/teacher/students/${studentId}/toggle-status`);
   return res.data;
 }
+
+export async function teacherLogin(payload: { login: string; password: string }) {
+  const base = getBase();
+  const res = await axios.post(`${base}/auth/teacher/login`, payload);
+  return res.data;
+}
+
+export async function teacherRegister(payload: {
+  username: string;
+  email: string;
+  password: string;
+  first_name: string;
+  last_name: string;
+}) {
+  const base = getBase();
+  const res = await axios.post(`${base}/auth/teacher/register`, payload);
+  return res.data;
+}
+

@@ -1,11 +1,10 @@
 import { useState, type ChangeEvent, type FormEvent, type SVGProps, type FC } from "react";
-import { API_URL } from "../../api/api";
+import { teacherLogin } from "../../api/api";
 import { useNavigate, Link } from "react-router-dom";
 import Header from "../Header/Header";
-import Sidebar from "../Sidebar/sidebar";
 import "../HomePage/StyleHomePage.css";
-import "../Sidebar/StyleSidebar.css";
-import "./StyleLogPage.css";
+import "../LogPage/StyleLogPage.css";
+import "./StyleTeacherAuth.css";
 
 type IconProps = SVGProps<SVGSVGElement>;
 
@@ -45,18 +44,22 @@ const Icons = {
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
             <circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>
         </svg>
+    ),
+    Shield: (props: IconProps) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+            <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+        </svg>
     )
 };
 
-interface LogPageProps {
+interface TeacherLoginProps {
     theme: "dark" | "light";
     toggleTheme: () => void;
 }
 
-function LogPage({ theme, toggleTheme }: LogPageProps) {
+function TeacherLogin({ }: TeacherLoginProps) {
     const [formData, setFormData] = useState({ login: '', password: '' });
     const [message, setMessage] = useState({ text: '', type: '' });
-    const [errors, setErrors] = useState({ login: false, password: false });
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const navigate = useNavigate();
@@ -64,7 +67,6 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
     const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
-        setErrors(prev => ({ ...prev, [name]: false }));
         setMessage({ text: '', type: '' });
     };
 
@@ -77,51 +79,39 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
         }
         setSubmitting(true);
         try {
-            const base = API_URL ? API_URL.replace(/\/$/, '') : (typeof window !== 'undefined' ? window.location.origin : '');
-            const res = await fetch(`${base}/auth/login`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ login, password }),
-            });
-
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(data.detail || "Неверный логин или пароль");
-            }
-
-            const user = await res.json();
+            const user = await teacherLogin({ login, password });
             window.localStorage.setItem("currentUser", JSON.stringify(user));
             try {
                 window.dispatchEvent(new CustomEvent('currentUserChanged', { detail: user }));
             } catch {
                 window.dispatchEvent(new Event('currentUserChanged'));
             }
-            navigate('/');
+            navigate('/admin-panel');
         } catch (err: any) {
-            setMessage({ text: err.message || "Ошибка при входе", type: "error" });
+            const errorMsg = err.response?.data?.detail || err.response?.data?.non_field_errors?.[0] || err.message || "Ошибка при входе";
+            setMessage({ text: errorMsg, type: "error" });
         } finally {
             setSubmitting(false);
         }
     };
 
-    const renderInputField = (label: string, type: string, name: keyof typeof formData, Icon: FC<IconProps>, isPass = false, visible = false, toggle = () => {}) => {
-        const hasError = errors[name];
+    const renderInputField = (label: string, type: string, name: keyof typeof formData, Icon: FC<IconProps>, placeholder: string, isPass = false) => {
         return (
             <div className="sl-auth-input-group">
                 <label className="sl-auth-label">{label}</label>
                 <div className="sl-auth-input-wrapper">
                     <span className="sl-auth-input-icon sl-auth-input-icon--left"><Icon /></span>
                     <input
-                        type={isPass ? (visible ? 'text' : 'password') : type}
+                        type={isPass ? (isPasswordVisible ? 'text' : 'password') : type}
                         name={name}
                         value={formData[name]}
                         onChange={handleChange}
-                        className={`sl-auth-input ${hasError ? 'sl-auth-input--error' : ''}`}
-                        placeholder={isPass ? "••••••••" : "Email или имя пользователя"}
+                        className="sl-auth-input"
+                        placeholder={placeholder}
                     />
                     {isPass && (
-                        <button type="button" onClick={toggle} className="sl-auth-input-icon sl-auth-input-icon--right" tabIndex={-1}>
-                            {visible ? <Icons.EyeOff /> : <Icons.Eye />}
+                        <button type="button" onClick={() => setIsPasswordVisible(!isPasswordVisible)} className="sl-auth-input-icon sl-auth-input-icon--right" tabIndex={-1}>
+                            {isPasswordVisible ? <Icons.EyeOff /> : <Icons.Eye />}
                         </button>
                     )}
                 </div>
@@ -132,19 +122,15 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
     return (
         <div className="sl-app">
             <Header />
-            <div className="sl-layout">
-                <Sidebar />
-                <main className="sl-main sl-auth-main">
-                    <div className="sl-auth-card">
+            <div className="sl-teacher-auth-layout">
+                <main className="sl-auth-main sl-teacher-auth-main">
+                    <div className="sl-auth-card sl-teacher-auth-card">
                         <div className="sl-auth-header">
-                            <div className="sl-auth-logo-icon">
-                                <svg width="32" height="32" viewBox="0 0 28 28" fill="none">
-                                    <path d="M14 2L24 8V20L14 26L4 20V8L14 2Z" fill="#4F46E5"/>
-                                    <path d="M14 8L19 11V17L14 20L9 17V11L14 8Z" fill="white"/>
-                                </svg>
+                            <div className="sl-teacher-auth-badge">
+                                <Icons.Shield stroke="#4F46E5" />
                             </div>
-                            <h1 className="sl-auth-title">Вход в StepLearn</h1>
-                            <p className="sl-auth-subtitle">Войдите в аккаунт, чтобы продолжить обучение</p>
+                            <h1 className="sl-auth-title">Вход для преподавателей</h1>
+                            <p className="sl-auth-subtitle">Войдите в преподавательский аккаунт для управления курсами и учениками</p>
                         </div>
 
                         {message.text && (
@@ -155,22 +141,22 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
                         )}
 
                         <form onSubmit={handleFormSubmit} className="sl-auth-form">
-                            {renderInputField('Логин или Email', 'text', 'login', Icons.Mail)}
-                            {renderInputField('Пароль', 'password', 'password', Icons.Lock, true, isPasswordVisible, () => setIsPasswordVisible(!isPasswordVisible))}
+                            {renderInputField('Логин или Email', 'text', 'login', Icons.Mail, 'Email или имя пользователя')}
+                            {renderInputField('Пароль', 'password', 'password', Icons.Lock, '••••••••', true)}
                             
                             <div className="sl-auth-actions">
-                                <button type="submit" className="sl-auth-submit-btn" disabled={submitting}>
-                                    {submitting ? "Вход..." : "Войти"}
+                                <button type="submit" className="sl-auth-submit-btn sl-teacher-submit-btn" disabled={submitting}>
+                                    {submitting ? "Вход..." : "Войти как преподаватель"}
                                 </button>
                             </div>
                         </form>
 
                         <div className="sl-auth-footer">
-                            <span>Ещё нет аккаунта? </span>
-                            <Link to="/register" className="sl-auth-link">Зарегистрироваться</Link>
+                            <span>Нет преподавательского аккаунта? </span>
+                            <Link to="/teacher-register" className="sl-auth-link">Зарегистрироваться</Link>
                         </div>
                         <div className="sl-auth-footer" style={{ marginTop: '8px' }}>
-                            <Link to="/teacher-login" className="sl-auth-link sl-auth-link--secondary">Вход для преподавателей →</Link>
+                            <Link to="/login" className="sl-auth-link sl-auth-link--secondary">← Вход для студентов</Link>
                         </div>
                     </div>
                 </main>
@@ -179,4 +165,4 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
     );
 }
 
-export default LogPage;
+export default TeacherLogin;

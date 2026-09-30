@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react";
 import axios from "axios";
-import { API_URL } from "../../api/api";
+import { API_URL, createCourse, saveCustomCourse } from "../../api/api";
 import { useNavigate } from "react-router-dom";
 import { marked } from "marked";
 import Header from "../Header/Header";
@@ -197,9 +197,16 @@ function CreateCourse({ theme, toggleTheme }: CreateCourseProps) {
 
       if (user && user.id) payload.author_id = user.id;
 
-      const base = API_URL.replace(/\/$/, "");
-      const resp = await axios.post(`${base}/api/v1/courses`, payload);
-      const created = resp.data;
+      const created = await createCourse(payload).catch(async () => {
+        // Fallback endpoint retry
+        const base = API_URL ? API_URL.replace(/\/$/, "") : "";
+        const resp = await axios.post(`${base}/v1/courses`, payload);
+        return resp.data;
+      });
+
+      if (created) {
+        saveCustomCourse(created);
+      }
 
       if (created && created.id) {
         navigate(`/course/${created.id}`);
@@ -267,15 +274,13 @@ function CreateCourse({ theme, toggleTheme }: CreateCourseProps) {
   };
 
   return (
-    <div style={backgroundStyle}>
-      <div className="app-main-view">
-        <Header />
-        <div className="app-layout">
-          <Sidebar />
-          <div className="content-area">
+    <div className="sl-app">
+      <Header />
+      <div className="sl-layout">
+        <Sidebar />
+        <main className="sl-main">
             <div className="content-header">
               <h1 className="main-title">Создать курс</h1>
-              <button className="theme-toggle-btn" onClick={toggleTheme} />
             </div>
 
             <div className="create-course-container">
@@ -662,10 +667,9 @@ function CreateCourse({ theme, toggleTheme }: CreateCourseProps) {
                 </div>
               </form>
             </div>
-          </div>
+          </main>
         </div>
       </div>
-    </div>
   );
 }
 

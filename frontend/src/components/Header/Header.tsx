@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { FiSearch, FiSettings, FiBell, FiChevronDown } from 'react-icons/fi';
+import { FiSearch, FiSettings, FiBell, FiChevronDown, FiSun, FiMoon } from 'react-icons/fi';
 import './StyleHeader.css';
 
 const Header: React.FC = () => {
@@ -10,6 +10,17 @@ const Header: React.FC = () => {
     const navigate = useNavigate();
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [userMenuOpen, setUserMenuOpen] = useState(false);
+    const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+        return (document.body.dataset.theme as 'light' | 'dark') || 'dark';
+    });
+
+    const toggleThemeHeader = () => {
+        const next = theme === 'dark' ? 'light' : 'dark';
+        document.body.dataset.theme = next;
+        localStorage.setItem('theme', next);
+        setTheme(next);
+    };
 
     useEffect(() => {
         const raw = localStorage.getItem('currentUser');
@@ -100,31 +111,76 @@ const Header: React.FC = () => {
 
             {/* Right controls */}
             <div className="sl-header__controls">
-                <button className="sl-header__icon-btn" aria-label="Настройки">
+                <button
+                    className="sl-header__icon-btn"
+                    aria-label="Смена темы"
+                    title={theme === 'dark' ? "Переключить на светлую тему" : "Переключить на тёмную тему"}
+                    onClick={toggleThemeHeader}
+                >
+                    {theme === 'dark' ? <FiSun style={{ color: '#f59e0b' }} /> : <FiMoon style={{ color: '#6366f1' }} />}
+                </button>
+                <button className="sl-header__icon-btn" aria-label="Настройки" onClick={() => navigate('/settings')}>
                     <FiSettings />
                 </button>
-                <button className="sl-header__icon-btn sl-header__icon-btn--notif" aria-label="Уведомления">
+                <button className="sl-header__icon-btn sl-header__icon-btn--notif" aria-label="Уведомления" onClick={() => navigate('/notifications')}>
                     <FiBell />
                     <span className="sl-header__notif-badge">3</span>
                 </button>
 
                 {currentUser ? (
-                    <button
-                        className="sl-header__user"
-                        onClick={() => navigate('/profile')}
-                    >
-                        {currentUser.avatar_url ? (
-                            <img src={currentUser.avatar_url} alt="" className="sl-header__avatar-img" />
-                        ) : (
-                            <span className="sl-header__avatar">{getUserInitial()}</span>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {(currentUser.role === 'teacher' || currentUser.role === 'admin' || currentUser.is_staff) && (
+                            <Link to="/admin-panel" className="sl-header__auth-login" style={{ background: 'linear-gradient(135deg, #1E1B4B 0%, #312E81 100%)', color: '#fff', fontWeight: 600 }}>
+                                Панель учителя
+                            </Link>
                         )}
-                        <span className="sl-header__user-name">{getUserName()}</span>
-                        <FiChevronDown className="sl-header__user-chevron" />
-                    </button>
+                        <button
+                            className="sl-header__user"
+                            onClick={() => setUserMenuOpen(!userMenuOpen)}
+                        >
+                            {currentUser.avatar_url ? (
+                                <img src={currentUser.avatar_url} alt="" className="sl-header__avatar-img" />
+                            ) : (
+                                <span className="sl-header__avatar">{getUserInitial()}</span>
+                            )}
+                            <span className="sl-header__user-name">{getUserName()}</span>
+                            <FiChevronDown className="sl-header__user-chevron" />
+                        </button>
+
+                        {userMenuOpen && (
+                            <div className="sl-header__dropdown" onClick={() => setUserMenuOpen(false)}>
+                                <div className="sl-header__dropdown-info">
+                                    <div className="sl-header__dropdown-name">{getUserName()}</div>
+                                    <div className="sl-header__dropdown-email">{currentUser.email || ''}</div>
+                                    <div className="sl-header__dropdown-role">{currentUser.role === 'teacher' ? 'Преподаватель' : currentUser.role === 'admin' ? 'Администратор' : 'Студент'}</div>
+                                </div>
+                                <hr className="sl-header__dropdown-divider" />
+                                <button className="sl-header__dropdown-item" onClick={() => navigate('/profile')}>
+                                    Мой профиль
+                                </button>
+                                {(currentUser.role === 'teacher' || currentUser.role === 'admin' || currentUser.is_staff) && (
+                                    <button className="sl-header__dropdown-item" onClick={() => navigate('/admin-panel')}>
+                                        Панель учителя
+                                    </button>
+                                )}
+                                <button className="sl-header__dropdown-item sl-header__dropdown-item--danger" onClick={() => {
+                                    localStorage.removeItem('currentUser');
+                                    setCurrentUser(null);
+                                    try { window.dispatchEvent(new CustomEvent('currentUserChanged')); } catch {}
+                                    navigate('/login');
+                                }}>
+                                    Выйти
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 ) : (
                     <div className="sl-header__auth">
                         <Link to="/login" className="sl-header__auth-login">Войти</Link>
                         <Link to="/register" className="sl-header__auth-register">Регистрация</Link>
+                        <Link to="/teacher-login" className="sl-header__auth-login" style={{ border: '1px solid var(--primary)', color: 'var(--primary)', background: 'transparent', fontWeight: 600 }}>
+                            Преподавателям
+                        </Link>
                     </div>
                 )}
             </div>

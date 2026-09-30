@@ -1,0 +1,190 @@
+/* Learning Path Styles */
+.sl-lp-container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.sl-lp-header {
+  margin-bottom: 24px;
+}
+
+.sl-lp-tag {
+  display: inline-block;
+  padding: 4px 12px;
+  background: var(--primary-light);
+  color: var(--primary);
+  border-radius: var(--radius-full);
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.sl-lp-title {
+  font-size: 1.85rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.sl-lp-subtitle {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.sl-lp-summary {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 32px;
+}
+
+.sl-lp-summary-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.sl-lp-summary-info h3 {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.sl-lp-summary-info p {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.sl-lp-progress-bar-wrap {
+  height: 10px;
+  background: var(--bg-input);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.sl-lp-progress-bar {
+  height: 100%;
+  background: var(--primary);
+  border-radius: var(--radius-full);
+  transition: width 0.5s ease;
+}
+
+.sl-lp-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  position: relative;
+  padding-left: 28px;
+}
+
+.sl-lp-timeline::before {
+  content: '';
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  background: var(--border-light);
+}
+
+.sl-lp-step {
+  position: relative;
+}
+
+.sl-lp-step-node {
+  position: absolute;
+  left: -28px;
+  top: 16px;
+  background: var(--bg-page);
+  border-radius: 50%;
+  padding: 2px;
+}
+
+.sl-lp-node-icon {
+  font-size: 1.4rem;
+}
+
+.sl-lp-node-icon--done { color: #10B981; }
+.sl-lp-node-icon--active { color: var(--primary); }
+.sl-lp-node-icon--locked { color: var(--text-muted); }
+
+.sl-lp-step-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  transition: all var(--transition);
+}
+
+.sl-lp-step--current .sl-lp-step-card {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.sl-lp-step-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.sl-lp-step-num {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+}
+
+.sl-lp-step-dur {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.sl-lp-step-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.sl-lp-step-desc {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.sl-lp-step-courses-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.sl-lp-step-courses ul {
+  list-style-type: disc;
+  padding-left: 20px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.sl-lp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 10px 20px;
+  background: var(--primary);
+  color: white;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background var(--transition);
+}
+
+.sl-lp-btn:hover {
+  background: var(--primary-hover);
+  color: white;
+}
