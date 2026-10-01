@@ -1526,12 +1526,26 @@ def exam_submit(request, exam_id):
 @permission_classes([IsAuthenticated, IsTeacherOrAdmin])
 def teacher_dashboard(request):
     """Сводный дашборд преподавателя (Раздел 20 плана)"""
-    total_students = User.objects.filter(role='student').count()
-    total_groups = StudyGroup.objects.count()
-    total_courses = Course.objects.count()
+    students = User.objects.filter(role='student')
+    groups = StudyGroup.objects.all()
+    courses = Course.objects.all()
+    if request.user.role == User.TEACHER and not request.user.is_staff and not request.user.is_superuser:
+        groups = groups.filter(teacher=request.user)
+        courses = courses.filter(author=request.user)
+        students = students.filter(
+            Q(study_groups__teacher=request.user)
+            | Q(enrollments__course__author=request.user)
+        ).distinct()
+
+    total_students = students.count()
+    total_groups = groups.count()
+    total_courses = courses.count()
     week_ago = timezone.now() - datetime.timedelta(days=7)
-    active_students = User.objects.filter(role='student', last_activity__gte=week_ago).count()
-    completed_enrollments = Enrollment.objects.filter(progress_percentage=100).count()
+    active_students = students.filter(last_activity__gte=week_ago).count()
+    completed_enrollments = Enrollment.objects.filter(
+        user__in=students,
+        progress_percentage=100,
+    ).count()
 
     return Response({
         'total_students': total_students,
@@ -1549,7 +1563,13 @@ def teacher_students_list(request):
     query = request.query_params.get('q', '').strip()
     group_id = request.query_params.get('group_id')
 
-    qs = User.objects.filter(role='student').prefetch_related('study_groups', 'enrollments').order_by('id')
+    qs = User.objects.filter(role='student').annotate(
+        completed_lessons_count=Count(
+            'lesson_progresses',
+            filter=Q(lesson_progresses__is_completed=True),
+            distinct=True,
+        )
+    ).prefetch_related('study_groups', 'enrollments').order_by('id')
     if query:
         qs = qs.filter(
             Q(username__icontains=query) |
@@ -1580,6 +1600,8 @@ def teacher_students_list(request):
             'group_name': primary_group.name if primary_group else 'Без группы',
             'courses_count': len(enrollments),
             'avg_progress': avg_progress,
+            'progress_percent': avg_progress,
+            'completed_lessons': student.completed_lessons_count,
             'last_activity': student.last_activity,
             'date_joined': student.date_joined,
         })

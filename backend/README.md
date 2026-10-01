@@ -193,6 +193,7 @@ Compose теперь не запускает базу и backend с общими
    $env:DJANGO_DEBUG = "1"
    python manage.py test api --noinput
    ```
+   
 7. Запустите сервер разработки:
    ```bash
    python manage.py runserver 0.0.0.0:8000

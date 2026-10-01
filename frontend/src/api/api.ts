@@ -543,6 +543,15 @@ export async function fetchTeacherDashboard() {
   return res.data;
 }
 
+export async function fetchTeacherCourses() {
+  const base = getBase();
+  const res = await axios.get(`${base}/v1/courses`);
+  if (!Array.isArray(res.data)) {
+    throw new Error("Teacher course response must be an array.");
+  }
+  return res.data;
+}
+
 export async function fetchTeacherStudents(params?: { q?: string; group_id?: number }) {
   const base = getBase();
   const res = await axios.get(`${base}/v1/teacher/students`, { params });
