@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
     FiHome, FiBook, FiBriefcase, FiMap, FiUsers, FiClipboard,
-    FiCalendar, FiBookmark, FiBell, FiSettings, FiHelpCircle,
+    FiCalendar, FiBookmark, FiAward, FiBell, FiSettings, FiHelpCircle,
     FiLogOut
 } from 'react-icons/fi';
 import type { IconType } from 'react-icons';
@@ -19,6 +19,7 @@ const mainNavItems: NavItem[] = [
     { title: 'Задания и проекты', icon: FiClipboard, path: '/assignments' },
     { title: 'Календарь', icon: FiCalendar, path: '/calendar' },
     { title: 'Мои курсы', icon: FiBookmark, path: '/my-courses' },
+    { title: 'Сертификаты', icon: FiAward, path: '/certificates' },
 ];
 
 const extraNavItems: NavItem[] = [
@@ -73,7 +74,9 @@ const Sidebar: React.FC = () => {
     return (
         <nav className="sl-sidebar">
             <div className="sl-sidebar__main">
-                {mainNavItems.map((item) => {
+                {mainNavItems
+                    .filter((item) => item.path !== '/certificates' || user?.role === 'student')
+                    .map((item) => {
                     const Icon = item.icon;
                     const active = isActive(item.path);
                     return (
@@ -141,8 +144,8 @@ const Sidebar: React.FC = () => {
                     <p className="sl-sidebar__cta-desc">
                         Проходи курсы, выполняй задания и получай сертификаты, которые ценятся.
                     </p>
-                    <Link to="/register" className="sl-sidebar__cta-btn">
-                        Узнать больше
+                    <Link to="/login" className="sl-sidebar__cta-btn">
+                        Войти в обучение
                     </Link>
                 </div>
             )}

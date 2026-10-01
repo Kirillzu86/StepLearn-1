@@ -4,6 +4,8 @@ from django.contrib.auth.admin import UserAdmin
 
 from .models import (
     Answer,
+    Assignment,
+    AssignmentTestCase,
     Course,
     CourseBlock,
     Enrollment,
@@ -14,7 +16,9 @@ from .models import (
     Lesson,
     Question,
     StudentLessonProgress,
+    StudentProfile,
     StudyGroup,
+    TeacherProfile,
     User,
 )
 
@@ -25,8 +29,20 @@ class CustomUserAdmin(UserAdmin):
     list_filter = ('role', 'is_staff', 'is_active')
     search_fields = ('username', 'email', 'first_name', 'last_name')
     fieldsets = UserAdmin.fieldsets + (
-        ('StepLearn', {'fields': ('avatar_url', 'role')}),
+        ('StepLearn', {'fields': ('avatar_url', 'role', 'must_change_password')}),
     )
+
+
+@admin.register(StudentProfile)
+class StudentProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'created_at', 'updated_at')
+    search_fields = ('user__username', 'user__first_name', 'user__last_name')
+
+
+@admin.register(TeacherProfile)
+class TeacherProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'created_at', 'updated_at')
+    search_fields = ('user__username', 'user__first_name', 'user__last_name')
 
 
 class AnswerInline(admin.TabularInline):
@@ -71,6 +87,19 @@ class LessonAdmin(admin.ModelAdmin):
     list_display = ('id', 'course', 'block', 'order', 'title', 'lesson_type', 'is_mandatory', 'created_at')
     list_filter = ('course', 'block', 'lesson_type', 'is_mandatory')
     search_fields = ('title', 'description', 'content')
+
+
+class AssignmentTestCaseInline(admin.TabularInline):
+    model = AssignmentTestCase
+    extra = 0
+
+
+@admin.register(Assignment)
+class AssignmentAdmin(admin.ModelAdmin):
+    list_display = ('id', 'title', 'course', 'assignment_type', 'is_published')
+    list_filter = ('assignment_type', 'is_published', 'course')
+    search_fields = ('title', 'description', 'course__title')
+    inlines = [AssignmentTestCaseInline]
 
 
 @admin.register(Exam)

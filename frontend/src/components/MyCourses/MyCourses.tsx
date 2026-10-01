@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import axios from "axios";
-import { API_URL } from "../../api/api";
+import { fetchCourseLearningProgress, fetchStudentCourses } from "../../api/api";
+import type { StudentCourseSummary } from "../../api/api";
 import Header from "../Header/Header";
 import Sidebar from "../Sidebar/sidebar";
 import { Link } from "react-router-dom";
@@ -9,43 +10,59 @@ import "../HomePage/StyleHomePage.css";
 import "../Sidebar/StyleSidebar.css";
 import "./StyleMyCourses.css";
 
-interface Course {
-  id: number;
-  title: string;
-  description: string;
-  progress_percentage?: number;
-  completed_lessons?: number;
-  total_lessons?: number;
-  category?: string;
+function getCoursesError(error: unknown) {
+  if (axios.isAxiosError(error)) {
+    if (error.response?.status === 401) return "Сессия истекла. Войдите снова.";
+    if (error.response?.status === 403) return "У вас нет доступа к списку курсов.";
+    if (!error.response) return "Нет подключения к серверу. Проверьте интернет и попробуйте снова.";
+    const detail = error.response.data?.detail;
+    if (typeof detail === "string") return detail;
+  }
+  return error instanceof Error
+    ? error.message
+    : "Не удалось загрузить курсы. Попробуйте ещё раз.";
 }
 
-export default function MyCourses({ theme, toggleTheme }: { theme: "dark" | "light"; toggleTheme: () => void }) {
-  const [myCourses, setMyCourses] = useState<Course[]>([]);
+export default function MyCourses() {
+  const [myCourses, setMyCourses] = useState<StudentCourseSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "in_progress" | "completed">("all");
 
-  useEffect(() => {
-    const loadMyCourses = async () => {
-      try {
-        const raw = localStorage.getItem("currentUser");
-        const user = raw ? JSON.parse(raw) : null;
-        if (!user || !user.id) {
-          setLoading(false);
-          return;
-        }
-
-        const base = API_URL.replace(/\/$/, "");
-        const resp = await axios.get(`${base}/api/v1/users/${user.id}/courses`).catch(() => ({ data: [] }));
-        const list = Array.isArray(resp.data) ? resp.data : (resp.data?.data || []);
-        setMyCourses(list);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
+  const loadMyCourses = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const raw = localStorage.getItem("currentUser");
+      const user = raw ? JSON.parse(raw) as { id?: number; role?: string } : null;
+      if (!user?.id || user.role !== "student") {
+        setMyCourses([]);
+        setError("Войдите в аккаунт ученика, чтобы посмотреть назначенные курсы.");
+        return;
       }
-    };
-    loadMyCourses();
+      const userId = user.id;
+      const courses = await fetchStudentCourses(userId);
+      const withProgress = await Promise.all(courses.map(async (course) => {
+        const progressResponse = await fetchCourseLearningProgress(userId, course.id);
+        return {
+          ...course,
+          progress_percentage:
+            progressResponse.learning_progress?.progress_percentage ??
+            course.progress_percentage ??
+            0,
+        };
+      }));
+      setMyCourses(withProgress);
+    } catch (loadError) {
+      setError(getCoursesError(loadError));
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadMyCourses();
+  }, [loadMyCourses]);
 
   const filteredCourses = myCourses.filter((c) => {
     const pct = c.progress_percentage || 0;
@@ -93,6 +110,18 @@ export default function MyCourses({ theme, toggleTheme }: { theme: "dark" | "lig
             {/* Courses Grid */}
             {loading ? (
               <div className="sl-loading">Загрузка ваших курсов...</div>
+            ) : error ? (
+              <div className="sl-empty sl-myc-empty" role="alert">
+                <div>{error}</div>
+                <button type="button" className="sl-myc-btn" onClick={() => void loadMyCourses()}>
+                  Повторить
+                </button>
+                {(error.includes("Войдите") || error.includes("Сессия")) && (
+                  <Link to="/login" style={{ color: "var(--primary)", fontWeight: 600 }}>
+                    Перейти ко входу
+                  </Link>
+                )}
+              </div>
             ) : filteredCourses.length > 0 ? (
               <div className="sl-myc-grid">
                 {filteredCourses.map((c) => {

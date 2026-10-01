@@ -177,7 +177,7 @@ const Header: React.FC = () => {
                 ) : (
                     <div className="sl-header__auth">
                         <Link to="/login" className="sl-header__auth-login">Войти</Link>
-                        <Link to="/register" className="sl-header__auth-register">Регистрация</Link>
+                        <Link to="/login" className="sl-header__auth-register">Войти как студент</Link>
                         <Link to="/teacher-login" className="sl-header__auth-login" style={{ border: '1px solid var(--primary)', color: 'var(--primary)', background: 'transparent', fontWeight: 600 }}>
                             Преподавателям
                         </Link>

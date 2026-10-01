@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useCallback, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "../../api/api";
 import Header from "../Header/Header";
@@ -23,12 +23,12 @@ function Profile(props: ProfileProps) {
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState({ username: "", email: "" });
   const [message, setMessage] = useState({ text: "", type: "" });
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const isDarkTheme = props.theme === "dark";
 
   // Ensure `theme` prop is observed to avoid unused-destructuring/build errors
   useEffect(() => {
@@ -38,6 +38,49 @@ function Profile(props: ProfileProps) {
       // noop during build/server-side
     }
   }, [props.theme]);
+
+  const fetchUserProfile = useCallback(async (userId: number) => {
+    setLoading(true);
+    setProfileError(null);
+    try {
+      const base = API_URL.replace(/\/$/, "");
+      const storedUser = JSON.parse(localStorage.getItem("currentUser") || "{}");
+      const response = await fetch(`${base}/api/v1/users/${userId}`, {
+        headers: { Authorization: `Bearer ${storedUser.access || ""}` },
+      });
+      if (response.status === 401) {
+        localStorage.removeItem("currentUser");
+        window.dispatchEvent(new Event("currentUserChanged"));
+        navigate("/login");
+        return;
+      }
+      const userData = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          userData.detail ||
+          (response.status === 403
+            ? "У вас нет доступа к этому профилю."
+            : `Не удалось загрузить профиль (ошибка ${response.status}).`),
+        );
+      }
+      const updatedUser = { ...storedUser, ...userData };
+      setCurrentUser(updatedUser);
+      setFormData({ username: userData.username, email: userData.email });
+      setAvatarPreview(userData.avatar_url || null);
+      localStorage.setItem("currentUser", JSON.stringify(updatedUser));
+    } catch (error) {
+      console.error("Ошибка при загрузке профиля:", error);
+      setProfileError(
+        error instanceof TypeError
+          ? "Не удалось подключиться к серверу. Проверьте интернет и попробуйте снова."
+          : error instanceof Error
+            ? error.message
+            : "Не удалось загрузить профиль. Попробуйте снова.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [navigate]);
 
   useEffect(() => {
     const userStr = localStorage.getItem("currentUser");
@@ -51,30 +94,12 @@ function Profile(props: ProfileProps) {
       setCurrentUser(user);
       setFormData({ username: user.username, email: user.email });
       setAvatarPreview(user.avatar_url || null);
-      fetchUserProfile(user.id);
-    } catch (e) {
+      void fetchUserProfile(user.id);
+    } catch (error) {
+      console.error("Unable to read the saved profile session:", error);
       navigate("/login");
     }
-  }, [navigate]);
-
-  const fetchUserProfile = async (userId: number) => {
-    try {
-      const base = API_URL.replace(/\/$/, "");
-      const response = await fetch(`${base}/api/v1/users/${userId}`);
-      if (response.ok) {
-        const userData = await response.json();
-        setCurrentUser(userData);
-        setFormData({ username: userData.username, email: userData.email });
-        setAvatarPreview(userData.avatar_url || null);
-        // Обновляем localStorage
-        localStorage.setItem("currentUser", JSON.stringify(userData));
-      }
-    } catch (error) {
-      console.error("Ошибка при загрузке профиля:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [fetchUserProfile, navigate]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -129,9 +154,13 @@ function Profile(props: ProfileProps) {
         return;
       }
 
+      const storedUser = JSON.parse(localStorage.getItem("currentUser") || "{}");
       const response = await fetch(`${base}/api/v1/users/${currentUser.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${storedUser.access || ""}`,
+        },
         body: JSON.stringify(updateData),
       });
 
@@ -141,20 +170,24 @@ function Profile(props: ProfileProps) {
       }
 
       const updatedUser = await response.json();
-      setCurrentUser(updatedUser);
-      localStorage.setItem("currentUser", JSON.stringify(updatedUser));
+      const updatedSession = { ...storedUser, ...updatedUser };
+      setCurrentUser(updatedSession);
+      localStorage.setItem("currentUser", JSON.stringify(updatedSession));
       setMessage({ text: "Профиль успешно обновлен", type: "success" });
       setEditing(false);
 
       // Обновляем header в текущей вкладке — срабатывает немедленно
       try {
-        window.dispatchEvent(new CustomEvent('currentUserChanged', { detail: updatedUser }));
+        window.dispatchEvent(new CustomEvent('currentUserChanged', { detail: updatedSession }));
       } catch {
         // fallback: emit a plain event so older browsers won't fail
         window.dispatchEvent(new Event('currentUserChanged'));
       }
-    } catch (error: any) {
-      setMessage({ text: error.message || "Ошибка при сохранении", type: "error" });
+    } catch (error) {
+      setMessage({
+        text: error instanceof Error ? error.message : "Ошибка при сохранении",
+        type: "error",
+      });
     }
   };
 
@@ -173,23 +206,46 @@ function Profile(props: ProfileProps) {
     }
   };
 
-  const backgroundStyle: React.CSSProperties = {
-    minHeight: "100vh",
-    backgroundColor: isDarkTheme ? "#030712" : "#f8fafc",
-    backgroundImage: isDarkTheme
-      ? "radial-gradient(circle at 50% 0%, #3b82f640, #030712 35%)"
-      : "radial-gradient(circle at 50% 0%, #e2e8f040, #f8fafc 35%)",
-    animation: "pulse-spotlight 15s infinite ease-in-out",
-  };
-
-  if (loading) {
+  if (loading && !profileError) {
     return (
       <div className="sl-app">
         <Header />
         <div className="sl-layout">
           <Sidebar />
           <main className="sl-main">
-            <div className="profile-loading">Загрузка...</div>
+            <div className="profile-loading" role="status" aria-live="polite">
+              Загрузка профиля...
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (profileError) {
+    return (
+      <div className="sl-app">
+        <Header />
+        <div className="sl-layout">
+          <Sidebar />
+          <main className="sl-main">
+            <div className="content-header">
+              <h1 className="main-title">Профиль</h1>
+            </div>
+            <div className="profile-content" style={{ marginTop: 0 }}>
+              <div className="profile-card">
+                <h2 className="profile-title">Не удалось загрузить профиль</h2>
+                <p role="alert">{profileError}</p>
+                <button
+                  type="button"
+                  className="profile-button"
+                  disabled={!currentUser}
+                  onClick={() => currentUser && void fetchUserProfile(currentUser.id)}
+                >
+                  Повторить
+                </button>
+              </div>
+            </div>
           </main>
         </div>
       </div>
@@ -280,7 +336,7 @@ function Profile(props: ProfileProps) {
                   </button>
                   <button className="profile-button profile-button-secondary" style={{ background: '#EF4444', color: '#fff' }} onClick={() => {
                     localStorage.removeItem('currentUser');
-                    try { window.dispatchEvent(new CustomEvent('currentUserChanged')); } catch {}
+                    window.dispatchEvent(new CustomEvent('currentUserChanged'));
                     navigate('/login');
                   }}>
                     Выйти из аккаунта

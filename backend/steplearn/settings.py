@@ -1,11 +1,25 @@
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-only-change-me')
-DEBUG = os.getenv('DJANGO_DEBUG', '1') == '1'
-allowed_hosts_val = os.getenv('DJANGO_ALLOWED_HOSTS', '*')
-ALLOWED_HOSTS = ['*'] if (DEBUG or allowed_hosts_val == '*') else [h.strip() for h in allowed_hosts_val.split(',') if h.strip()]
+load_dotenv(BASE_DIR / '.env')
+
+DEBUG = os.getenv('DJANGO_DEBUG', '0') == '1'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    if not DEBUG:
+        raise ImproperlyConfigured('DJANGO_SECRET_KEY must be configured when DEBUG is disabled.')
+    SECRET_KEY = 'insecure-development-key-do-not-use-in-production'
+
+allowed_hosts_val = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1')
+ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_val.split(',') if host.strip()]
+if DEBUG and allowed_hosts_val == '*':
+    ALLOWED_HOSTS = ['*']
+elif '*' in ALLOWED_HOSTS:
+    raise ImproperlyConfigured('DJANGO_ALLOWED_HOSTS cannot contain * when DEBUG is disabled.')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -15,8 +29,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
-    'api',
+    'api.apps.ApiConfig',
 ]
 
 MIDDLEWARE = [
@@ -52,12 +67,15 @@ if os.getenv('USE_SQLITE', '0') == '1' or os.getenv('POSTGRES_HOST') == 'sqlite'
     }
 else:
     DB_ENGINE = os.getenv('POSTGRES_ENGINE', 'django.db.backends.postgresql')
+    DB_PASSWORD = os.getenv('POSTGRES_PASSWORD', '')
+    if not DB_PASSWORD and not DEBUG:
+        raise ImproperlyConfigured('POSTGRES_PASSWORD must be configured when DEBUG is disabled.')
     DATABASES = {
         'default': {
             'ENGINE': DB_ENGINE,
             'NAME': os.getenv('POSTGRES_DB', 'Stepik'),
             'USER': os.getenv('POSTGRES_USER', 'postgres'),
-            'PASSWORD': os.getenv('POSTGRES_PASSWORD', '1234'),
+            'PASSWORD': DB_PASSWORD,
             'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
             'PORT': os.getenv('POSTGRES_PORT', '5432'),
             'CONN_MAX_AGE': int(os.getenv('DB_CONN_MAX_AGE', '60')),
@@ -75,10 +93,13 @@ USE_I18N = True
 USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+MEDIA_ROOT = BASE_DIR / 'private_uploads'
+DATA_UPLOAD_MAX_MEMORY_SIZE = 12 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'api.User'
 
-if DEBUG or os.getenv('CORS_ALLOW_ALL_ORIGINS', '1') == '1':
+if DEBUG or os.getenv('CORS_ALLOW_ALL_ORIGINS', '0') == '1':
     CORS_ALLOW_ALL_ORIGINS = True
 else:
     CORS_ALLOWED_ORIGINS = [
@@ -99,7 +120,14 @@ CSRF_TRUSTED_ORIGINS = [
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT = False
 
+SIMPLE_JWT = {
+    'SIGNING_KEY': os.getenv('JWT_SECRET') or SECRET_KEY,
+}
+
 REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'api.authentication.PasswordChangeRequiredAuthentication',
+    ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ] + (['rest_framework.renderers.BrowsableAPIRenderer'] if DEBUG else []),

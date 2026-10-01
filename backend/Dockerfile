@@ -16,7 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN python -c "from pathlib import Path; path = Path('/entrypoint.sh'); path.write_bytes(path.read_bytes().replace(b'\r\n', b'\n'))" \
+    && chmod +x /entrypoint.sh
 
 EXPOSE 8000
 

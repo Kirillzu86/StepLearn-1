@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { API_URL } from "../../api/api";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import Header from "../Header/Header";
 import Sidebar from "../Sidebar/sidebar";
 import "./StyleHomePage.css";
@@ -20,6 +20,38 @@ interface Course {
   completed_lessons: number;
   progress_percentage: number;
   category?: string;
+}
+
+interface CurrentUser {
+  id: number;
+  username?: string;
+  name?: string;
+  role?: string;
+}
+
+function normalizeCourses(data: unknown): Course[] {
+  if (Array.isArray(data)) return data as Course[];
+  if (!data || typeof data !== "object") return [];
+  const wrapped = data as {
+    data?: unknown;
+    courses?: unknown;
+    results?: unknown;
+  };
+  if (Array.isArray(wrapped.data)) return wrapped.data as Course[];
+  if (Array.isArray(wrapped.courses)) return wrapped.courses as Course[];
+  if (Array.isArray(wrapped.results)) return wrapped.results as Course[];
+  return [];
+}
+
+function getCoursesError(error: unknown) {
+  if (axios.isAxiosError(error)) {
+    if (error.response?.status === 401) return "Сессия истекла. Войдите снова.";
+    if (error.response?.status === 403) return "Нет доступа к этим курсам.";
+    if (!error.response) return "Нет подключения к серверу. Проверьте интернет и попробуйте снова.";
+    const detail = error.response.data?.detail;
+    if (typeof detail === "string") return detail;
+  }
+  return "Не удалось загрузить курсы. Попробуйте ещё раз.";
 }
 
 // --- Category type ---
@@ -127,82 +159,84 @@ function MyCourseItem({ course }: { course: Course }) {
 }
 
 // --- Main HomePage ---
-interface HomePageProps {
-  theme: "dark" | "light";
-  toggleTheme: () => void;
-}
-
-function HomePage({ theme, toggleTheme }: HomePageProps) {
+function HomePage() {
   const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [myCourses, setMyCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [myCoursesError, setMyCoursesError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const location = useLocation();
-  const navigate = useNavigate();
+
+  const loadDashboardData = useCallback(async (signal?: AbortSignal) => {
+    setLoading(true);
+    setCatalogError(null);
+    setMyCoursesError(null);
+
+    let user: CurrentUser | null = null;
+    try {
+      const userStr = localStorage.getItem("currentUser");
+      user = userStr ? JSON.parse(userStr) as CurrentUser : null;
+      if (user && (!Number.isInteger(user.id) || user.id <= 0)) {
+        throw new Error("Invalid saved user session");
+      }
+      setCurrentUser(user);
+    } catch (error) {
+      console.error("Unable to read the saved user session:", error);
+      localStorage.removeItem("currentUser");
+      setCurrentUser(null);
+      setMyCourses([]);
+      setMyCoursesError("Не удалось прочитать сессию. Войдите в аккаунт ещё раз.");
+    }
+
+    const base = API_URL.replace(/\/$/, "");
+    const timestamp = Date.now();
+    const config = { signal };
+    const catalogRequest = axios.get<unknown>(
+      `${base}/api/v1/courses?_t=${timestamp}`,
+      config,
+    );
+    const myCoursesRequest = user
+      ? axios.get<unknown>(
+          `${base}/api/v1/users/${user.id}/courses?_t=${timestamp}`,
+          config,
+        )
+      : Promise.resolve({ data: [] as unknown });
+
+    const [catalogResult, myCoursesResult] = await Promise.allSettled([
+      catalogRequest,
+      myCoursesRequest,
+    ]);
+    if (signal?.aborted) return;
+
+    if (catalogResult.status === "fulfilled") {
+      setAllCourses(normalizeCourses(catalogResult.value.data));
+    } else if (!axios.isCancel(catalogResult.reason)) {
+      setAllCourses([]);
+      setCatalogError(getCoursesError(catalogResult.reason));
+    }
+
+    if (myCoursesResult.status === "fulfilled") {
+      setMyCourses(normalizeCourses(myCoursesResult.value.data));
+    } else if (!axios.isCancel(myCoursesResult.reason)) {
+      setMyCourses([]);
+      setMyCoursesError(getCoursesError(myCoursesResult.reason));
+    }
+
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const timestamp = new Date().getTime();
-        const config = {
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0',
-          },
-        };
-
-        let user = null;
-        try {
-          const userStr = localStorage.getItem("currentUser");
-          user = userStr ? JSON.parse(userStr) : null;
-        } catch {
-          user = null;
-          localStorage.removeItem("currentUser");
-        }
-
-        const base = API_URL.replace(/\/$/, '');
-        const allCoursesPromise = axios
-          .get<Course[]>(`${base}/api/v1/courses?_t=${timestamp}`, config)
-          .catch(() => ({ data: [] as Course[] }));
-
-        let myCoursesPromise = Promise.resolve({ data: [] as Course[] });
-        if (user && user.id) {
-          myCoursesPromise = axios
-            .get<Course[]>(`${base}/api/v1/users/${user.id}/courses?_t=${timestamp}`, config)
-            .catch((err) => {
-              if (err?.response?.status === 404) {
-                localStorage.removeItem("currentUser");
-                setCurrentUser(null);
-              }
-              return { data: [] as Course[] };
-            });
-          setCurrentUser(user);
-        } else {
-          setCurrentUser(null);
-        }
-
-        const [allRes, myRes] = await Promise.all([allCoursesPromise, myCoursesPromise]);
-
-        const normalize = (data: any): Course[] => {
-          if (Array.isArray(data)) return data;
-          if (data?.data && Array.isArray(data.data)) return data.data;
-          if (data?.courses && Array.isArray(data.courses)) return data.courses;
-          if (data?.results && Array.isArray(data.results)) return data.results;
-          return [];
-        };
-
-        setAllCourses(normalize(allRes.data));
-        setMyCourses(normalize(myRes.data));
-      } catch (err) {
-        console.error("Ошибка загрузки данных:", err);
-      } finally {
+    const controller = new AbortController();
+    void loadDashboardData(controller.signal).catch((error: unknown) => {
+      if (!axios.isCancel(error)) {
+        console.error("Dashboard data loading failed:", error);
+        setCatalogError(getCoursesError(error));
         setLoading(false);
       }
-    };
-    fetchData();
-  }, [location]);
+    });
+    return () => controller.abort();
+  }, [location.key, loadDashboardData]);
 
   const userName = currentUser
     ? (currentUser.username || currentUser.name || "Пользователь")
@@ -271,7 +305,19 @@ function HomePage({ theme, toggleTheme }: HomePageProps) {
             </div>
             <div className="sl-courses-grid">
               {loading ? (
-                <div className="sl-loading">Загрузка курсов...</div>
+                <div className="sl-loading" role="status">Загрузка курсов...</div>
+              ) : catalogError ? (
+                <div className="sl-data-state sl-data-state--error" role="alert">
+                  <p>{catalogError}</p>
+                  <button
+                    type="button"
+                    className="sl-data-state__retry"
+                    onClick={() => void loadDashboardData()}
+                  >
+                    Повторить
+                  </button>
+                  {catalogError.includes("Войдите") && <Link to="/login">Перейти ко входу</Link>}
+                </div>
               ) : allCourses.length > 0 ? (
                 allCourses.slice(0, 4).map((course) => (
                   <CourseCard key={course.id} course={course} />
@@ -321,45 +367,80 @@ function HomePage({ theme, toggleTheme }: HomePageProps) {
           </div>
 
           {/* Progress */}
-          {currentUser && myCourses.length > 0 && (
+          {currentUser && (myCourses.length > 0 || myCoursesError || loading) && (
             <div className="sl-rp-card">
               <div className="sl-rp-card__title">Твой прогресс</div>
-              <div className="sl-rp-progress">
-                <div className="sl-rp-progress__bar">
-                  <div className="sl-rp-progress__fill" style={{ width: `${totalProgress}%` }} />
+              {myCoursesError ? (
+                <div className="sl-data-state sl-data-state--error" role="alert">
+                  <p>{myCoursesError}</p>
+                  <button
+                    type="button"
+                    className="sl-data-state__retry"
+                    onClick={() => void loadDashboardData()}
+                  >
+                    Повторить
+                  </button>
                 </div>
-                <div className="sl-rp-progress__label">
-                  <span>{myCourses.filter(c => (c.progress_percentage || 0) >= 100).length} из {myCourses.length} курсов</span>
-                  <span>{totalProgress}%</span>
-                </div>
-              </div>
-              {currentUser && (
-                <Link to="/catalog" className="sl-rp-card__link">Продолжить обучение →</Link>
+              ) : loading ? (
+                <div className="sl-loading" role="status">Загрузка прогресса...</div>
+              ) : (
+                <>
+                  <div className="sl-rp-progress">
+                    <div className="sl-rp-progress__bar">
+                      <div className="sl-rp-progress__fill" style={{ width: `${totalProgress}%` }} />
+                    </div>
+                    <div className="sl-rp-progress__label">
+                      <span>{myCourses.filter(c => (c.progress_percentage || 0) >= 100).length} из {myCourses.length} курсов</span>
+                      <span>{totalProgress}%</span>
+                    </div>
+                  </div>
+                  <Link to="/catalog" className="sl-rp-card__link">Продолжить обучение →</Link>
+                </>
               )}
             </div>
           )}
 
           {/* My courses list */}
-          {currentUser && myCourses.length > 0 && (
+          {currentUser && (myCourses.length > 0 || myCoursesError || loading) && (
             <div className="sl-rp-card">
               <div className="sl-rp-card__header">
                 <span className="sl-rp-card__title">Твои курсы</span>
                 <Link to="/my-courses" className="sl-rp-card__all">Все →</Link>
               </div>
-              <div className="sl-rp-courses">
-                {myCourses.slice(0, 4).map((c) => (
-                  <MyCourseItem key={c.id} course={c} />
-                ))}
-              </div>
+              {myCoursesError ? (
+                <div className="sl-data-state sl-data-state--error" role="alert">
+                  <p>{myCoursesError}</p>
+                  <button
+                    type="button"
+                    className="sl-data-state__retry"
+                    onClick={() => void loadDashboardData()}
+                  >
+                    Повторить
+                  </button>
+                </div>
+              ) : loading ? (
+                <div className="sl-loading" role="status">Загрузка курсов...</div>
+              ) : (
+                <div className="sl-rp-courses">
+                  {myCourses.slice(0, 4).map((c) => (
+                    <MyCourseItem key={c.id} course={c} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
           {/* Certificates CTA */}
           <div className="sl-rp-cert">
             <div className="sl-rp-cert__text">
-              Получай сертификаты и повышай свою ценность на рынке труда!
+              Завершай курсы, отслеживай достижения и открывай свои сертификаты.
             </div>
-            <Link to="/catalog" className="sl-rp-cert__btn">Подробнее</Link>
+            <Link
+              to={currentUser?.role === "student" ? "/certificates" : "/catalog"}
+              className="sl-rp-cert__btn"
+            >
+              {currentUser?.role === "student" ? "Мои сертификаты" : "Подробнее"}
+            </Link>
           </div>
 
           {/* News */}

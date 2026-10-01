@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type FormEvent, type SVGProps, type FC } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent, type SVGProps, type FC } from "react";
 import { API_URL } from "../../api/api";
 import { useNavigate, Link } from "react-router-dom";
 import Header from "../Header/Header";
@@ -59,7 +59,26 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
     const [errors, setErrors] = useState({ login: false, password: false });
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmNewPassword, setConfirmNewPassword] = useState('');
+    const [pendingUser, setPendingUser] = useState<any>(null);
+    const [currentPassword, setCurrentPassword] = useState('');
     const navigate = useNavigate();
+
+    useEffect(() => {
+        const storedUser = window.localStorage.getItem('currentUser');
+        if (!storedUser) return;
+        try {
+            const user = JSON.parse(storedUser);
+            if (user.must_change_password && user.access) {
+                setPendingUser(user);
+                setPasswordChangeRequired(true);
+            }
+        } catch (error) {
+            console.error('Unable to restore password-change session:', error);
+        }
+    }, []);
 
     const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
@@ -91,6 +110,13 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
 
             const user = await res.json();
             window.localStorage.setItem("currentUser", JSON.stringify(user));
+            if (user.must_change_password) {
+                setPendingUser(user);
+                setCurrentPassword(password);
+                setPasswordChangeRequired(true);
+                setMessage({ text: 'Для продолжения установите новый пароль.', type: 'error' });
+                return;
+            }
             try {
                 window.dispatchEvent(new CustomEvent('currentUserChanged', { detail: user }));
             } catch {
@@ -99,6 +125,49 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
             navigate('/');
         } catch (err: any) {
             setMessage({ text: err.message || "Ошибка при входе", type: "error" });
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handlePasswordChange = async (e: FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        if (!pendingUser?.access) {
+            setMessage({ text: 'Сессия входа не найдена. Войдите снова.', type: 'error' });
+            setPasswordChangeRequired(false);
+            return;
+        }
+        if (newPassword !== confirmNewPassword) {
+            setMessage({ text: 'Пароли не совпадают.', type: 'error' });
+            return;
+        }
+
+        setSubmitting(true);
+        try {
+            const base = API_URL ? API_URL.replace(/\/$/, '') : window.location.origin;
+            const res = await fetch(`${base}/auth/change-password`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${pendingUser.access}`,
+                },
+                body: JSON.stringify({
+                    current_password: currentPassword,
+                    new_password: newPassword,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                const validationMessage = Object.values(data).flat().join(' ');
+                throw new Error(validationMessage || 'Не удалось сменить пароль.');
+            }
+
+            const updatedUser = { ...pendingUser, must_change_password: false };
+            window.localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+            window.dispatchEvent(new CustomEvent('currentUserChanged', { detail: updatedUser }));
+            navigate('/');
+        } catch (err: any) {
+            setMessage({ text: err.message || 'Ошибка при смене пароля.', type: 'error' });
         } finally {
             setSubmitting(false);
         }
@@ -143,8 +212,12 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
                                     <path d="M14 8L19 11V17L14 20L9 17V11L14 8Z" fill="white"/>
                                 </svg>
                             </div>
-                            <h1 className="sl-auth-title">Вход в StepLearn</h1>
-                            <p className="sl-auth-subtitle">Войдите в аккаунт, чтобы продолжить обучение</p>
+                            <h1 className="sl-auth-title">{passwordChangeRequired ? 'Смените временный пароль' : 'Вход в StepLearn'}</h1>
+                            <p className="sl-auth-subtitle">
+                                {passwordChangeRequired
+                                    ? 'Для безопасности задайте новый пароль перед продолжением.'
+                                    : 'Войдите в аккаунт, чтобы продолжить обучение'}
+                            </p>
                         </div>
 
                         {message.text && (
@@ -154,24 +227,72 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
                             </div>
                         )}
 
-                        <form onSubmit={handleFormSubmit} className="sl-auth-form">
-                            {renderInputField('Логин или Email', 'text', 'login', Icons.Mail)}
-                            {renderInputField('Пароль', 'password', 'password', Icons.Lock, true, isPasswordVisible, () => setIsPasswordVisible(!isPasswordVisible))}
-                            
-                            <div className="sl-auth-actions">
-                                <button type="submit" className="sl-auth-submit-btn" disabled={submitting}>
-                                    {submitting ? "Вход..." : "Войти"}
-                                </button>
-                            </div>
-                        </form>
+                        {passwordChangeRequired ? (
+                            <form onSubmit={handlePasswordChange} className="sl-auth-form">
+                                <div className="sl-auth-input-group">
+                                    <label className="sl-auth-label" htmlFor="current-password">Временный пароль</label>
+                                    <input
+                                        id="current-password"
+                                        className="sl-auth-input"
+                                        type="password"
+                                        autoComplete="current-password"
+                                        value={currentPassword}
+                                        onChange={(e) => setCurrentPassword(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                                <div className="sl-auth-input-group">
+                                    <label className="sl-auth-label" htmlFor="new-password">Новый пароль</label>
+                                    <input
+                                        id="new-password"
+                                        className="sl-auth-input"
+                                        type="password"
+                                        autoComplete="new-password"
+                                        value={newPassword}
+                                        onChange={(e) => setNewPassword(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                                <div className="sl-auth-input-group">
+                                    <label className="sl-auth-label" htmlFor="confirm-new-password">Повторите новый пароль</label>
+                                    <input
+                                        id="confirm-new-password"
+                                        className="sl-auth-input"
+                                        type="password"
+                                        autoComplete="new-password"
+                                        value={confirmNewPassword}
+                                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                                <div className="sl-auth-actions">
+                                    <button type="submit" className="sl-auth-submit-btn" disabled={submitting}>
+                                        {submitting ? 'Сохраняем...' : 'Сменить пароль'}
+                                    </button>
+                                </div>
+                            </form>
+                        ) : (
+                            <form onSubmit={handleFormSubmit} className="sl-auth-form">
+                                {renderInputField('Логин или Email', 'text', 'login', Icons.Mail)}
+                                {renderInputField('Пароль', 'password', 'password', Icons.Lock, true, isPasswordVisible, () => setIsPasswordVisible(!isPasswordVisible))}
+                                <div className="sl-auth-actions">
+                                    <button type="submit" className="sl-auth-submit-btn" disabled={submitting}>
+                                        {submitting ? "Вход..." : "Войти"}
+                                    </button>
+                                </div>
+                            </form>
+                        )}
 
-                        <div className="sl-auth-footer">
-                            <span>Ещё нет аккаунта? </span>
-                            <Link to="/register" className="sl-auth-link">Зарегистрироваться</Link>
-                        </div>
-                        <div className="sl-auth-footer" style={{ marginTop: '8px' }}>
-                            <Link to="/teacher-login" className="sl-auth-link sl-auth-link--secondary">Вход для преподавателей →</Link>
-                        </div>
+                        {!passwordChangeRequired && (
+                            <>
+                                <div className="sl-auth-footer">
+                                    <span>Учетную запись создаёт преподаватель.</span>
+                                </div>
+                                <div className="sl-auth-footer" style={{ marginTop: '8px' }}>
+                                    <Link to="/teacher-login" className="sl-auth-link sl-auth-link--secondary">Вход для преподавателей →</Link>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </main>
             </div>

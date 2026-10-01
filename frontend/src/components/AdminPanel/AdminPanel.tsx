@@ -44,6 +44,7 @@ import {
   createCourseBlock,
   importCourseMarkdown,
   createCourse,
+  updateCourse,
   saveCustomCourse,
 } from "../../api/api";
 import Header from "../Header/Header";
@@ -68,6 +69,8 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
   // Студенты и Мониторинг
   const [students, setStudents] = useState<any[]>([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
+  const [studentsError, setStudentsError] = useState<string | null>(null);
+  const [dataLoadError, setDataLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStudentDetail, setSelectedStudentDetail] = useState<any>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -91,7 +94,9 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
   // Мониторинг успеваемости / Матрица
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
+  const [groupCourseSelections, setGroupCourseSelections] = useState<Record<number, number | "">>({});
   const [matrixData, setMatrixData] = useState<any>(null);
+  const [matrixError, setMatrixError] = useState<string | null>(null);
   const [matrixLoading, setMatrixLoading] = useState(false);
 
   // Редактор курсов и Markdown импорт
@@ -111,6 +116,11 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDesc, setNewGroupDesc] = useState("");
+  const [newGroupCapacity, setNewGroupCapacity] = useState(6);
+  const [newGroupStudents, setNewGroupStudents] = useState(
+    Array.from({ length: 6 }, () => ({ first_name: "", last_name: "" }))
+  );
+  const [createdGroupCredentials, setCreatedGroupCredentials] = useState<any[] | null>(null);
   const [selectedGroupForStudentAdd, setSelectedGroupForStudentAdd] = useState<number | "">("");
   const [selectedStudentToAssign, setSelectedStudentToAssign] = useState<number | "">("");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -134,61 +144,29 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
     setLoading(true);
     try {
       const [groupsData, coursesData] = await Promise.all([
-        fetchGroups(userId).catch(() => []),
-        fetchCourses().catch(() => []),
+        fetchGroups(userId),
+        fetchCourses(),
       ]);
-
-      const demoStudents = [
-        { id: 101, first_name: "Алексей", last_name: "Иванов", username: "alex_ivanov", email: "alexey@steplearn.ru", group_name: "Группа ПИ-202", is_active: true, progress_percent: 75, completed_lessons: 6 },
-        { id: 102, first_name: "Мария", last_name: "Петрова", username: "mariya_p", email: "maria@steplearn.ru", group_name: "Группа ПИ-202", is_active: true, progress_percent: 90, completed_lessons: 8 },
-        { id: 103, first_name: "Дмитрий", last_name: "Сидоров", username: "dmitry_sid", email: "dmitry@steplearn.ru", group_name: "Группа ИВТ-101", is_active: false, progress_percent: 30, completed_lessons: 2 },
-        { id: 104, first_name: "Екатерина", last_name: "Смирнова", username: "kate_sm", email: "ekaterina@steplearn.ru", group_name: "Группа ИВТ-101", is_active: true, progress_percent: 50, completed_lessons: 4 }
-      ];
-
-      const finalGroups = Array.isArray(groupsData) && groupsData.length > 0 ? groupsData : [
-        {
-          id: 1,
-          name: "Группа ПИ-202 (Python & React)",
-          code: "STP-PI202",
-          students_count: 2,
-          description: "Программирование на Python и Web-разработка",
-          students: [demoStudents[0], demoStudents[1]],
-          courses: [{ id: 1, title: "Python с нуля" }, { id: 2, title: "React с нуля" }]
-        },
-        {
-          id: 2,
-          name: "Группа ИВТ-101 (Основы CS)",
-          code: "STP-IVT101",
-          students_count: 2,
-          description: "Информатика и основы алгоритмов",
-          students: [demoStudents[2], demoStudents[3]],
-          courses: [{ id: 1, title: "Python с нуля" }]
-        }
-      ];
-
-      const finalCourses = Array.isArray(coursesData) && coursesData.length > 0 ? coursesData : [
-        { id: 1, title: "Python с нуля", category: "Python", description: "Изучение основам синтаксиса Python, переменных и циклов", lessons: [{ id: 1, title: "Введение в Python", order: 1 }, { id: 2, title: "Переменные и типы данных", order: 2 }] },
-        { id: 2, title: "React с нуля", category: "Frontend", description: "Пошаговый курс по созданию SPA на React + TypeScript", lessons: [{ id: 3, title: "Компоненты и Props", order: 1 }] }
-      ];
-
-      setGroups(finalGroups);
-      setCourses(finalCourses);
-      if (finalGroups.length > 0) {
-        setSelectedGroupId(finalGroups[0].id);
-        setSelectedGroupForStudentAdd(finalGroups[0].id);
-        if (finalGroups[0].courses && finalGroups[0].courses.length > 0) {
-          setSelectedCourseId(finalGroups[0].courses[0].id);
-        } else if (finalCourses.length > 0) {
-          setSelectedCourseId(finalCourses[0].id);
+      const loadedGroups = Array.isArray(groupsData) ? groupsData : [];
+      const loadedCourses = Array.isArray(coursesData) ? coursesData : [];
+      setGroups(loadedGroups);
+      setCourses(loadedCourses);
+      if (loadedGroups.length > 0) {
+        setSelectedGroupId(loadedGroups[0].id);
+        setSelectedGroupForStudentAdd(loadedGroups[0].id);
+        if (loadedGroups[0].courses?.length > 0) {
+          setSelectedCourseId(loadedGroups[0].courses[0].id);
         }
       }
-      if (finalCourses.length > 0) {
-        setSelectedCourseForEdit(finalCourses[0].id);
+      if (loadedCourses.length > 0) {
+        setSelectedCourseForEdit(loadedCourses[0].id);
       }
 
+      setDataLoadError(null);
       loadStudents();
     } catch (e) {
       console.error("Ошибка инициализации панели:", e);
+      setDataLoadError("Не удалось загрузить группы и курсы. Проверьте подключение и права доступа.");
     } finally {
       setLoading(false);
     }
@@ -197,16 +175,13 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
   const loadStudents = async () => {
     setStudentsLoading(true);
     try {
-      const data = await fetchTeacherStudents({ q: searchQuery }).catch(() => []);
-      const demoStudents = [
-        { id: 101, first_name: "Алексей", last_name: "Иванов", username: "alex_ivanov", email: "alexey@steplearn.ru", group_name: "Группа ПИ-202", is_active: true, progress_percent: 75, completed_lessons: 6 },
-        { id: 102, first_name: "Мария", last_name: "Петрова", username: "mariya_p", email: "maria@steplearn.ru", group_name: "Группа ПИ-202", is_active: true, progress_percent: 90, completed_lessons: 8 },
-        { id: 103, first_name: "Дмитрий", last_name: "Сидоров", username: "dmitry_sid", email: "dmitry@steplearn.ru", group_name: "Группа ИВТ-101", is_active: false, progress_percent: 30, completed_lessons: 2 },
-        { id: 104, first_name: "Екатерина", last_name: "Смирнова", username: "kate_sm", email: "ekaterina@steplearn.ru", group_name: "Группа ИВТ-101", is_active: true, progress_percent: 50, completed_lessons: 4 }
-      ];
-      setStudents(Array.isArray(data) && data.length > 0 ? data : demoStudents);
+      const data = await fetchTeacherStudents({ q: searchQuery });
+      setStudents(Array.isArray(data) ? data : []);
+      setStudentsError(null);
     } catch (e) {
       console.error("Ошибка загрузки студентов:", e);
+      setStudents([]);
+      setStudentsError("Не удалось загрузить список учеников.");
     } finally {
       setStudentsLoading(false);
     }
@@ -221,25 +196,16 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
 
   const loadMatrix = async (groupId: number, courseId: number) => {
     setMatrixLoading(true);
+    setMatrixData(null);
+    setMatrixError(null);
     try {
-      const data = await fetchGroupProgressMatrix(groupId, courseId).catch(() => null);
-      const demoMatrix = {
-        lessons: [
-          { lesson_id: 1, title: "Урок 1: Введение в Python", order: 1, is_unlocked: true, completed_students_count: 3, total_students_count: 4, completion_rate: 75 },
-          { lesson_id: 2, title: "Урок 2: Переменные и типы данных", order: 2, is_unlocked: true, completed_students_count: 2, total_students_count: 4, completion_rate: 50 },
-          { lesson_id: 3, title: "Урок 3: Условные операторы", order: 3, is_unlocked: false, completed_students_count: 1, total_students_count: 4, completion_rate: 25 },
-          { lesson_id: 4, title: "Урок 4: Циклы while и for", order: 4, is_unlocked: false, completed_students_count: 0, total_students_count: 4, completion_rate: 0 }
-        ],
-        students: [
-          { id: 101, name: "Алексей Иванов", overall_progress: 75, lessons: { 1: true, 2: true, 3: true, 4: false } },
-          { id: 102, name: "Мария Петрова", overall_progress: 90, lessons: { 1: true, 2: true, 3: false, 4: false } },
-          { id: 103, name: "Дмитрий Сидоров", overall_progress: 30, lessons: { 1: true, 2: false, 3: false, 4: false } },
-          { id: 104, name: "Екатерина Смирнова", overall_progress: 50, lessons: { 1: true, 2: true, 3: false, 4: false } }
-        ]
-      };
-      setMatrixData(data || demoMatrix);
+      const data = await fetchGroupProgressMatrix(groupId, courseId);
+      setMatrixData(data);
+      setMatrixError(null);
     } catch (e) {
+      console.error("Не удалось загрузить матрицу группы", e);
       setMatrixData(null);
+      setMatrixError("Не удалось загрузить матрицу. Проверьте, назначен ли этот курс группе.");
     } finally {
       setMatrixLoading(false);
     }
@@ -253,7 +219,43 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
       });
       if (selectedCourseId) loadMatrix(selectedGroupId, selectedCourseId);
     } catch (e) {
-      alert("Доступ к модулю изменен");
+      console.error("Не удалось изменить доступ к модулю", e);
+      alert("Не удалось изменить доступ к модулю.");
+    }
+  };
+
+  const handleAssignCourseToGroup = async (groupId: number) => {
+    const courseId = groupCourseSelections[groupId];
+    if (!courseId) {
+      alert("Выберите курс для назначения группе.");
+      return;
+    }
+    try {
+      await assignCourseToGroup(groupId, courseId);
+      const course = courses.find((item) => item.id === courseId);
+      setGroups((previous) =>
+        previous.map((group) =>
+          group.id === groupId && course
+            ? { ...group, courses: [...(group.courses || []), course] }
+            : group
+        )
+      );
+      setGroupCourseSelections((previous) => ({ ...previous, [groupId]: "" }));
+    } catch (e) {
+      console.error("Не удалось назначить курс группе", e);
+      alert("Не удалось назначить курс группе.");
+    }
+  };
+
+  const handleCourseStatusChange = async (courseId: number, status: "draft" | "published" | "archived") => {
+    try {
+      const updated = await updateCourse(courseId, { status });
+      setCourses((previous) =>
+        previous.map((course) => course.id === courseId ? { ...course, ...updated } : course)
+      );
+    } catch (e) {
+      console.error("Не удалось изменить статус курса", e);
+      alert("Не удалось изменить статус курса. Убедитесь, что вы автор курса.");
     }
   };
 
@@ -322,11 +324,12 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
     const targetGroup = groups.find((g) => g.id === groupId);
 
     try {
-      await addStudentToGroup(groupId, { student_id: studentId }).catch(() => null);
+      const updatedGroup = await addStudentToGroup(groupId, { student_id: studentId });
 
       setGroups((prevGroups) =>
         prevGroups.map((g) => {
           if (g.id === groupId) {
+            if (updatedGroup?.students) return updatedGroup;
             const existing = g.students || [];
             if (!existing.some((st: any) => st.id === studentId)) {
               return {
@@ -374,30 +377,44 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
   const handleCreateGroup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newGroupName.trim()) return;
+    if (
+      newGroupStudents.length !== newGroupCapacity ||
+      newGroupStudents.some((student) => !student.first_name.trim() || !student.last_name.trim())
+    ) {
+      alert("Заполните имя и фамилию каждого ученика в группе");
+      return;
+    }
     try {
       const g = await createGroup({
         name: newGroupName.trim(),
         description: newGroupDesc.trim(),
         teacher_id: currentUser?.id,
-      }).catch(() => null);
+        capacity: newGroupCapacity,
+        students: newGroupStudents.map((student) => ({
+          first_name: student.first_name.trim(),
+          last_name: student.last_name.trim(),
+        })),
+      });
 
-      const createdGroup = g || {
-        id: Date.now(),
-        name: newGroupName.trim(),
-        description: newGroupDesc.trim(),
-        code: "STP-" + Math.floor(1000 + Math.random() * 9000),
-        students_count: 0,
-        students: [],
-        courses: []
-      };
-
-      setGroups((prev) => [...prev, createdGroup]);
+      setGroups((prev) => [...prev, g]);
+      setSelectedGroupId(g.id);
+      setSelectedGroupForStudentAdd(g.id);
+      setCreatedGroupCredentials(g.created_students || []);
+      setStudents((prev) => [
+        ...prev,
+        ...(g.created_students || []).map((item: any) => ({
+          ...item.user,
+          group_name: g.name,
+        })),
+      ]);
       setShowCreateGroupModal(false);
       setNewGroupName("");
       setNewGroupDesc("");
-      alert("Группа успешно создана!");
+      setNewGroupCapacity(6);
+      setNewGroupStudents(Array.from({ length: 6 }, () => ({ first_name: "", last_name: "" })));
     } catch (e) {
-      alert("Ошибка создания группы");
+      console.error("Не удалось создать группу и учётные записи учеников", e);
+      alert("Не удалось создать группу. Проверьте данные и попробуйте ещё раз.");
     }
   };
 
@@ -564,6 +581,8 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
               </div>
             </div>
 
+            {dataLoadError && <div className="error-state">{dataLoadError}</div>}
+
             {/* 3 ОСНОВНЫЕ ВКЛАДКИ ДЛЯ ПРЕПОДАВАТЕЛЯ */}
             <nav className="admin-nav-tabs">
               <button
@@ -582,7 +601,7 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                 className={`admin-tab-btn ${activeTab === "groups" ? "active" : ""}`}
                 onClick={() => setActiveTab("groups")}
               >
-                <FiUsers /> 👥 3. Создание групп из учеников
+                <FiUsers /> 👥 3. Группы и доступ к материалам
               </button>
             </nav>
 
@@ -618,6 +637,7 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                       </button>
                     </div>
                   )}
+                  {studentsError && <div className="error-state">{studentsError}</div>}
 
                   {/* ТАБЛИЦА ВСЕХ УЧЕНИКОВ */}
                   <div className="matrix-table-container" style={{ marginTop: 0, marginBottom: 30 }}>
@@ -686,14 +706,25 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
 
                   {/* РАЗДЕЛ: МАТРИЦА УСПЕВАЕМОСТИ И ДОСТУП К МОДУЛЯМ (STEPIK / CISCO) */}
                   <div className="gating-header">
-                    <h3 style={{ margin: "0 0 16px 0", fontSize: "1.2rem" }}>🎓 Матрица успеваемости и открытие модулей (Stepik / NetAcad)</h3>
+                    <h3 style={{ margin: "0 0 16px 0", fontSize: "1.2rem" }}>🎓 Матрица успеваемости и ручной доступ к материалам</h3>
                     <div className="selectors-row">
                       <div>
                         <label style={{ marginRight: 8, fontWeight: 600 }}>Группа:</label>
                         <select
                           className="admin-select"
                           value={selectedGroupId || ""}
-                          onChange={(e) => setSelectedGroupId(Number(e.target.value))}
+                          onChange={(e) => {
+                            const groupId = Number(e.target.value);
+                            const group = groups.find((item) => item.id === groupId);
+                            setSelectedGroupId(groupId);
+                            setSelectedCourseId(group?.courses?.[0]?.id || null);
+                            setMatrixData(null);
+                            setMatrixError(
+                              group?.courses?.length
+                                ? null
+                                : "Сначала назначьте группе курс."
+                            );
+                          }}
                         >
                           {groups.map((g) => (
                             <option key={g.id} value={g.id}>{g.name}</option>
@@ -706,11 +737,14 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                         <select
                           className="admin-select"
                           value={selectedCourseId || ""}
-                          onChange={(e) => setSelectedCourseId(Number(e.target.value))}
+                          onChange={(e) => setSelectedCourseId(e.target.value ? Number(e.target.value) : null)}
                         >
-                          {courses.map((c) => (
+                          {(groups.find((group) => group.id === selectedGroupId)?.courses || []).map((c: any) => (
                             <option key={c.id} value={c.id}>{c.title}</option>
                           ))}
+                          {!(groups.find((group) => group.id === selectedGroupId)?.courses || []).length && (
+                            <option value="">Сначала назначьте группе курс</option>
+                          )}
                         </select>
                       </div>
                     </div>
@@ -744,7 +778,7 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                                   }}
                                   onClick={() => handleToggleAccess(l.lesson_id, l.is_unlocked)}
                                 >
-                                  {l.is_unlocked ? "🔓 Доступ открыт" : "🔒 Открыть модуль"}
+                                  {l.is_unlocked ? "🔓 Закрыть вручную" : "🔒 Открыть вручную"}
                                 </button>
                               </th>
                             ))}
@@ -770,6 +804,8 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                         </tbody>
                       </table>
                     </div>
+                  ) : matrixError ? (
+                    <div className="error-state">{matrixError}</div>
                   ) : null}
                 </div>
               )}
@@ -800,6 +836,26 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                         <option key={c.id} value={c.id}>{c.title} ({c.category || "Общий"})</option>
                       ))}
                     </select>
+                    {selectedCourseForEdit && (
+                      <label style={{ marginLeft: 16, fontWeight: 700 }}>
+                        Статус:
+                        <select
+                          className="admin-select"
+                          style={{ marginLeft: 8 }}
+                          value={courses.find((course) => course.id === selectedCourseForEdit)?.status || "published"}
+                          onChange={(e) =>
+                            handleCourseStatusChange(
+                              selectedCourseForEdit,
+                              e.target.value as "draft" | "published" | "archived"
+                            )
+                          }
+                        >
+                          <option value="draft">Черновик</option>
+                          <option value="published">Опубликован</option>
+                          <option value="archived">Архив</option>
+                        </select>
+                      </label>
+                    )}
                   </div>
 
                   {/* БЛОКИ КУРСА */}
@@ -836,7 +892,7 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
               {activeTab === "groups" && (
                 <div className="groups-view animate-fade-in">
                   <div className="section-header-row" style={{ marginBottom: 20 }}>
-                    <h2 style={{ fontSize: "1.4rem", margin: 0 }}>👥 Создание групп из существующих учеников</h2>
+                    <h2 style={{ fontSize: "1.4rem", margin: 0 }}>👥 Создание групп и учётных записей учеников</h2>
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 20, marginBottom: 30 }}>
@@ -863,8 +919,70 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                             onChange={(e) => setNewGroupDesc(e.target.value)}
                           />
                         </div>
+                        <div className="form-group">
+                          <label>Количество учеников *</label>
+                          <input
+                            type="number"
+                            required
+                            min={1}
+                            max={100}
+                            value={newGroupCapacity}
+                            onChange={(e) => {
+                              const capacity = Math.max(1, Math.min(100, Number(e.target.value) || 1));
+                              setNewGroupCapacity(capacity);
+                              setNewGroupStudents((students) =>
+                                Array.from(
+                                  { length: capacity },
+                                  (_, index) => students[index] || { first_name: "", last_name: "" }
+                                )
+                              );
+                            }}
+                          />
+                        </div>
+                        <div style={{ maxHeight: 320, overflowY: "auto", marginBottom: 14 }}>
+                          {newGroupStudents.map((student, index) => (
+                            <div
+                              key={index}
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "1fr 1fr",
+                                gap: 8,
+                                marginBottom: 8,
+                              }}
+                            >
+                              <input
+                                type="text"
+                                required
+                                maxLength={150}
+                                placeholder={`Имя ученика ${index + 1}`}
+                                value={student.first_name}
+                                onChange={(e) =>
+                                  setNewGroupStudents((students) =>
+                                    students.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, first_name: e.target.value } : item
+                                    )
+                                  )
+                                }
+                              />
+                              <input
+                                type="text"
+                                required
+                                maxLength={150}
+                                placeholder="Фамилия"
+                                value={student.last_name}
+                                onChange={(e) =>
+                                  setNewGroupStudents((students) =>
+                                    students.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, last_name: e.target.value } : item
+                                    )
+                                  )
+                                }
+                              />
+                            </div>
+                          ))}
+                        </div>
                         <button type="submit" className="btn-primary" style={{ width: "100%" }}>
-                          <FiPlus /> Создать группу
+                          <FiPlus /> Создать группу и учётные записи
                         </button>
                       </form>
                     </div>
@@ -914,6 +1032,29 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                     </div>
                   </div>
 
+                  {createdGroupCredentials && (
+                    <div className="quick-actions-box" style={{ marginBottom: 24 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <h3 style={{ marginTop: 0 }}>Учётные данные созданных учеников</h3>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => setCreatedGroupCredentials(null)}
+                        >
+                          Скрыть
+                        </button>
+                      </div>
+                      <p>Сохраните и передайте эти данные ученикам. При первом входе потребуется сменить пароль.</p>
+                      {createdGroupCredentials.map((item, index) => (
+                        <div key={item.user.id || index} style={{ padding: "8px 0", borderTop: "1px solid var(--border-light)" }}>
+                          <strong>{item.first_name} {item.last_name}</strong>
+                          <div>Логин: <code>{item.username}</code></div>
+                          <div>Временный пароль: <code>{item.password}</code></div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {/* СПИСОК ВСЕХ ГРУПП С УЧЕНИКАМИ */}
                   <h3 style={{ marginBottom: 16, fontSize: "1.2rem" }}>Список созданных учебных групп</h3>
                   <div className="admin-grid">
@@ -937,9 +1078,38 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                           {g.description || "Учебная группа платформы StepLearn"}
                         </p>
 
+                        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                          <select
+                            className="admin-select"
+                            style={{ flex: 1, minWidth: 0 }}
+                            value={groupCourseSelections[g.id] || ""}
+                            onChange={(e) =>
+                              setGroupCourseSelections((previous) => ({
+                                ...previous,
+                                [g.id]: e.target.value ? Number(e.target.value) : "",
+                              }))
+                            }
+                          >
+                            <option value="">Назначить курс...</option>
+                            {courses
+                              .filter((course) => !(g.courses || []).some((assigned: any) => assigned.id === course.id))
+                              .map((course) => (
+                                <option key={course.id} value={course.id}>{course.title}</option>
+                              ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            onClick={() => handleAssignCourseToGroup(g.id)}
+                          >
+                            Назначить
+                          </button>
+                        </div>
+
                         <div style={{ padding: "10px 0", borderTop: "1px solid var(--border-light)", marginBottom: 12 }}>
                           <strong style={{ fontSize: "0.9rem", display: "block", marginBottom: 8 }}>
-                            👥 Ученики в группе ({g.students?.length || g.students_count || 0}):
+                            👥 Ученики в группе ({g.students?.length || g.students_count || 0}
+                            {g.capacity ? ` / ${g.capacity}` : ""}):
                           </strong>
                           {g.students && g.students.length > 0 ? (
                             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -982,6 +1152,13 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                             style={{ fontSize: "0.82rem", padding: "6px 12px" }}
                             onClick={() => {
                               setSelectedGroupId(g.id);
+                              setSelectedCourseId(g.courses?.[0]?.id || null);
+                              setMatrixData(null);
+                              setMatrixError(
+                                g.courses?.length
+                                  ? null
+                                  : "Сначала назначьте группе курс."
+                              );
                               setActiveTab("students");
                             }}
                           >
@@ -991,6 +1168,9 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                       </div>
                     ))}
                   </div>
+                  {groups.length === 0 && (
+                    <p>Групп пока нет. Создайте группу и добавьте учеников, чтобы назначить им материалы.</p>
+                  )}
                 </div>
               )}
             </div>

@@ -198,7 +198,6 @@ function TeacherRegister({ }: TeacherRegisterProps) {
                             <Link to="/teacher-login" className="sl-auth-link">Войти</Link>
                         </div>
                         <div className="sl-auth-footer" style={{ marginTop: '8px' }}>
-                            <Link to="/register" className="sl-auth-link sl-auth-link--secondary">← Регистрация студента</Link>
                         </div>
                     </div>
                 </main>

@@ -1,6 +1,50 @@
 // AI-GENERATED: Antigravity
 import axios from "axios";
 
+declare module "axios" {
+  interface AxiosRequestConfig {
+    _skipSessionAuth?: boolean;
+  }
+
+  interface InternalAxiosRequestConfig {
+    _authRetry?: boolean;
+    _skipSessionAuth?: boolean;
+  }
+}
+
+interface StoredSession {
+  access?: string;
+  refresh?: string;
+  [key: string]: unknown;
+}
+
+interface RefreshResponse {
+  access?: string;
+  refresh?: string;
+}
+
+let refreshRequest: Promise<string> | null = null;
+
+axios.interceptors.request.use((config) => {
+  if (config._skipSessionAuth) {
+    return config;
+  }
+  if (typeof window !== "undefined") {
+    const storedUser = window.localStorage.getItem("currentUser");
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser) as { access?: string };
+        if (user.access) {
+          config.headers.Authorization = `Bearer ${user.access}`;
+        }
+      } catch (error) {
+        console.error("Unable to read the saved user session:", error);
+      }
+    }
+  }
+  return config;
+});
+
 // Если VITE_API_URL задан (например, при деплое в Coolify), используем его.
 // Если нет — в браузере берем текущий origin (window.location.origin).
 export const API_URL = (() => {
@@ -17,6 +61,78 @@ export const API_URL = (() => {
 })();
 
 export const getBase = () => API_URL.replace(/\/$/, '');
+
+axios.interceptors.response.use(
+  (response) => response,
+  async (error: unknown) => {
+    if (!axios.isAxiosError(error) || error.response?.status !== 401) {
+      return Promise.reject(error);
+    }
+
+    const request = error.config;
+    const requestUrl = request?.url ?? "";
+    if (
+      !request ||
+      request._authRetry ||
+      /\/auth\/(refresh|login|teacher\/login)(?:\/|$|\?)/.test(requestUrl)
+    ) {
+      return Promise.reject(error);
+    }
+
+    let session: StoredSession;
+    try {
+      const savedSession = window.localStorage.getItem("currentUser");
+      session = savedSession ? JSON.parse(savedSession) as StoredSession : {};
+    } catch (storageError) {
+      console.error("Unable to read the saved user session:", storageError);
+      return Promise.reject(error);
+    }
+
+    if (!session.access || !session.refresh) {
+      return Promise.reject(error);
+    }
+
+    request._authRetry = true;
+    let access: string;
+    try {
+      if (!refreshRequest) {
+        refreshRequest = axios
+          .post<RefreshResponse>(`${getBase()}/auth/refresh`, {
+            refresh: session.refresh,
+          }, { _skipSessionAuth: true })
+          .then(({ data }) => {
+            if (!data.access) {
+              throw new Error("Token refresh response did not include an access token.");
+            }
+            const updatedSession = {
+              ...session,
+              access: data.access,
+              ...(data.refresh ? { refresh: data.refresh } : {}),
+            };
+            window.localStorage.setItem("currentUser", JSON.stringify(updatedSession));
+            window.dispatchEvent(
+              new CustomEvent("currentUserChanged", { detail: updatedSession }),
+            );
+            return data.access;
+          })
+          .finally(() => {
+            refreshRequest = null;
+          });
+      }
+
+      access = await refreshRequest;
+    } catch (refreshError) {
+      if (axios.isAxiosError(refreshError) && refreshError.response?.status === 401) {
+        window.localStorage.removeItem("currentUser");
+        window.dispatchEvent(new Event("currentUserChanged"));
+      }
+      return Promise.reject(refreshError);
+    }
+
+    request.headers.set("Authorization", `Bearer ${access}`);
+    return axios(request);
+  },
+);
 
 // ==========================================
 // Пользователи и курсы
@@ -91,11 +207,152 @@ export async function fetchCourses(query?: string, timestamp?: number) {
   return Array.from(mergedMap.values());
 }
 
-export async function fetchCourseDetail(courseId: number, userId?: number) {
+export async function fetchCourseDetail(courseId: number) {
   const base = getBase();
-  const userParam = userId ? `?user_id=${userId}` : "";
-  const res = await axios.get(`${base}/v1/course/${courseId}${userParam}`);
+  const res = await axios.get(`${base}/v1/course/${courseId}`);
   return res.data;
+}
+
+export interface StudentAssignmentOption {
+  id: number;
+  text: string;
+}
+
+export interface StudentAssignmentQuestion {
+  id: number;
+  text: string;
+  options: StudentAssignmentOption[];
+}
+
+export interface StudentAssignment {
+  id: number;
+  course_id: number;
+  lesson_id: number | null;
+  title: string;
+  description: string;
+  assignment_type: "text" | "short_answer" | "quiz" | "multiple_choice" | "file_upload" | "code";
+  points: number;
+  max_attempts: number;
+  due_at: string | null;
+  programming_language: "python" | "javascript";
+  starter_code: string;
+  hints: string[];
+  questions: StudentAssignmentQuestion[];
+}
+
+export interface StudentAssignmentSubmission {
+  id: number;
+  assignment_id: number;
+  student_id: number;
+  answer_text: string;
+  response_data: Record<string, number[]>;
+  status: "submitted" | "graded";
+  score: number | null;
+  feedback: string;
+  has_file: boolean;
+  original_file_name: string;
+  submitted_at: string;
+  graded_at: string | null;
+}
+
+export interface StudentCourseSummary {
+  id: number;
+  title: string;
+  description: string;
+  progress_percentage?: number;
+  completed_lessons?: number;
+  total_lessons?: number;
+  category?: string;
+}
+
+export interface CourseLearningProgress {
+  completed_items: number;
+  total_items: number;
+  progress_percentage: number;
+  is_completed: boolean;
+  sections: Array<{
+    id: number | null;
+    title: string;
+    completed_items: number;
+    total_items: number;
+    progress_percentage: number;
+    lessons: Array<{
+      id: number;
+      title: string;
+      is_completed: boolean;
+      completed_at: string | null;
+      assignments: Array<{
+        id: number;
+        title: string;
+        assignment_type: StudentAssignment["assignment_type"];
+        is_completed: boolean;
+        status: "not_started" | "in_progress" | "completed";
+        attempts_used: number;
+        score: number | null;
+        submitted_at: string | null;
+      }>;
+    }>;
+    assignments: Array<{
+      id: number;
+      title: string;
+      assignment_type: StudentAssignment["assignment_type"];
+      is_completed: boolean;
+      status: "not_started" | "in_progress" | "completed";
+      attempts_used: number;
+      score: number | null;
+      submitted_at: string | null;
+    }>;
+  }>;
+}
+
+export async function fetchStudentCourses(userId: number): Promise<StudentCourseSummary[]> {
+  const base = getBase();
+  const res = await axios.get(`${base}/v1/users/${userId}/courses`);
+  if (!Array.isArray(res.data)) {
+    throw new Error("Сервер вернул некорректный список курсов.");
+  }
+  return res.data as StudentCourseSummary[];
+}
+
+export async function fetchCourseLearningProgress(userId: number, courseId: number) {
+  const base = getBase();
+  const res = await axios.get(`${base}/v1/users/${userId}/courses/${courseId}/progress`);
+  return res.data as { learning_progress?: CourseLearningProgress };
+}
+
+export async function fetchCourseAssignments(courseId: number) {
+  const base = getBase();
+  const res = await axios.get(`${base}/v1/courses/${courseId}/assignments`);
+  return Array.isArray(res.data) ? res.data as StudentAssignment[] : [];
+}
+
+export async function fetchAssignmentSubmissions(assignmentId: number) {
+  const base = getBase();
+  const res = await axios.get(`${base}/v1/assignments/${assignmentId}/submissions`);
+  return Array.isArray(res.data) ? res.data as StudentAssignmentSubmission[] : [];
+}
+
+export async function submitStudentAssignment(
+  assignmentId: number,
+  payload: { answer_text: string } | { source_code: string } |
+    { answers: Array<{ question_id: number; option_ids: number[] }> } |
+    { file: File },
+) {
+  const base = getBase();
+  if ("file" in payload) {
+    const formData = new FormData();
+    formData.append("file", payload.file);
+    const res = await axios.post(
+      `${base}/v1/assignments/${assignmentId}/submissions`,
+      formData,
+    );
+    return res.data as StudentAssignmentSubmission;
+  }
+  const res = await axios.post(
+    `${base}/v1/assignments/${assignmentId}/submissions`,
+    payload,
+  );
+  return res.data as StudentAssignmentSubmission;
 }
 
 // ==========================================
@@ -109,7 +366,13 @@ export async function fetchGroups(teacherId?: number) {
   return Array.isArray(res.data) ? res.data : [];
 }
 
-export async function createGroup(data: { name: string; description?: string; teacher_id: number }) {
+export async function createGroup(data: {
+  name: string;
+  description?: string;
+  teacher_id: number;
+  capacity: number;
+  students: Array<{ first_name: string; last_name: string }>;
+}) {
   const base = getBase();
   const res = await axios.post(`${base}/v1/groups`, data);
   return res.data;
@@ -165,9 +428,9 @@ export async function toggleGroupLessonAccess(
   return res.data;
 }
 
-export async function completeLesson(lessonId: number, userId: number) {
+export async function completeLesson(lessonId: number) {
   const base = getBase();
-  const res = await axios.post(`${base}/v1/lessons/${lessonId}/complete`, { user_id: userId });
+  const res = await axios.post(`${base}/v1/lessons/${lessonId}/complete`);
   return res.data;
 }
 
@@ -219,6 +482,15 @@ export async function createCourse(data: {
   return res.data;
 }
 
+export async function updateCourse(
+  courseId: number,
+  data: { title?: string; description?: string; status?: "draft" | "published" | "archived" }
+) {
+  const base = getBase();
+  const res = await axios.patch(`${base}/v1/course/${courseId}`, data);
+  return res.data;
+}
+
 export async function importCourseMarkdown(courseId: number, data: { title?: string; content: string; block_id?: number }) {
   const base = getBase();
   const res = await axios.post(`${base}/v1/courses/${courseId}/import-markdown`, data);
@@ -229,10 +501,9 @@ export async function importCourseMarkdown(courseId: number, data: { title?: str
 // Экзамены
 // ==========================================
 
-export async function fetchBlockExam(blockId: number, userId?: number) {
+export async function fetchBlockExam(blockId: number) {
   const base = getBase();
-  const param = userId ? `?user_id=${userId}` : "";
-  const res = await axios.get(`${base}/v1/blocks/${blockId}/exam${param}`);
+  const res = await axios.get(`${base}/v1/blocks/${blockId}/exam`);
   return res.data;
 }
 
@@ -248,15 +519,13 @@ export async function createOrUpdateBlockExam(blockId: number, data: {
   return res.data;
 }
 
-export async function fetchExam(examId: number, userId?: number) {
+export async function fetchExam(examId: number) {
   const base = getBase();
-  const param = userId ? `?user_id=${userId}` : "";
-  const res = await axios.get(`${base}/v1/exams/${examId}${param}`);
+  const res = await axios.get(`${base}/v1/exams/${examId}`);
   return res.data;
 }
 
 export async function submitExam(examId: number, payload: {
-  user_id: number;
   answers: Array<{ question_id: number; answer_id: number }>;
 }) {
   const base = getBase();
@@ -327,4 +596,3 @@ export async function teacherRegister(payload: {
   const res = await axios.post(`${base}/auth/teacher/register`, payload);
   return res.data;
 }
-
