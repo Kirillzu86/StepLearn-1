@@ -18,6 +18,7 @@ class User(AbstractUser):
     avatar_url = models.TextField(blank=True, null=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='student')
     must_change_password = models.BooleanField(default=False)
+    is_archived = models.BooleanField(default=False)
     last_activity = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -264,9 +265,25 @@ class AssignmentTestCase(models.Model):
 
 
 class AssignmentSubmission(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_RUNNING = 'running'
+    STATUS_PASSED = 'passed'
+    STATUS_FAILED = 'failed'
+    STATUS_TIMEOUT = 'timeout'
+    STATUS_RUNTIME_ERROR = 'runtime_error'
+    STATUS_COMPILE_ERROR = 'compile_error'
+    STATUS_SYSTEM_ERROR = 'system_error'
     STATUS_SUBMITTED = 'submitted'
     STATUS_GRADED = 'graded'
     STATUS_CHOICES = [
+        (STATUS_PENDING, 'Ожидает запуска'),
+        (STATUS_RUNNING, 'Выполняется'),
+        (STATUS_PASSED, 'Успешно'),
+        (STATUS_FAILED, 'Не прошло проверки'),
+        (STATUS_TIMEOUT, 'Таймаут'),
+        (STATUS_RUNTIME_ERROR, 'Ошибка выполнения'),
+        (STATUS_COMPILE_ERROR, 'Ошибка компиляции'),
+        (STATUS_SYSTEM_ERROR, 'Системная ошибка'),
         (STATUS_SUBMITTED, 'Отправлено'),
         (STATUS_GRADED, 'Проверено'),
     ]
@@ -274,14 +291,23 @@ class AssignmentSubmission(models.Model):
     assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='submissions')
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='assignment_submissions')
     answer_text = models.TextField(blank=True)
+    source_code = models.TextField(blank=True)
+    language = models.CharField(max_length=20, blank=True, default='')
     response_data = models.JSONField(default=dict, blank=True)
     uploaded_file = models.FileField(upload_to=assignment_upload_path, blank=True, null=True)
     original_file_name = models.CharField(max_length=255, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_SUBMITTED)
     score = models.PositiveIntegerField(null=True, blank=True)
+    tests_passed = models.PositiveIntegerField(null=True, blank=True)
+    tests_total = models.PositiveIntegerField(null=True, blank=True)
+    execution_time_ms = models.PositiveIntegerField(null=True, blank=True)
+    memory_used_mb = models.PositiveIntegerField(null=True, blank=True)
+    error_message = models.CharField(max_length=500, blank=True)
+    runner_task_id = models.CharField(max_length=64, blank=True)
     feedback = models.TextField(blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
     graded_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-submitted_at', '-id']

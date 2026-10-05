@@ -16,10 +16,6 @@
   border-top: 3px solid #4F46E5;
 }
 
-.sl-teacher-register-card {
-  max-width: 520px !important;
-}
-
 .sl-teacher-auth-badge {
   display: flex;
   align-items: center;

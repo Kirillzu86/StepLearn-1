@@ -12,8 +12,12 @@ fi
 echo "Applying database migrations..."
 python manage.py migrate --noinput
 
-echo "Seeding demo data..."
-python manage.py seed_demo || true
+if [ "${SEED_DEMO_DATA:-0}" = "1" ]; then
+    echo "Seeding explicitly requested demo data..."
+    python manage.py seed_demo
+else
+    echo "Skipping demo data seeding (set SEED_DEMO_DATA=1 to opt in)."
+fi
 
 echo "Collecting static files..."
 python manage.py collectstatic --noinput || true

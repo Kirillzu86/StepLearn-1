@@ -81,49 +81,60 @@
 
 ## 5. Teacher Frontend
 
-- [ ] Создать или адаптировать React + TypeScript + Vite приложение преподавателя.
-- [ ] Реализовать teacher login и защищённую навигацию.
-- [ ] Реализовать Dashboard со статистикой.
-- [ ] Реализовать поиск, фильтрацию и CRUD студентов.
-- [ ] Реализовать блокировку, архивирование, пароль и профиль студента.
-- [ ] Реализовать CRUD курсов, sections, lessons и assignments.
-- [ ] Реализовать публикацию, архивирование и назначение курса.
-- [ ] Реализовать просмотр submissions и progress.
-- [ ] Обработать loading, empty, error и permission denied-состояния.
-- [ ] Добавить frontend-тесты ключевых teacher workflows.
+- [x] Разделить Student и Teacher на два независимых React + TypeScript + Vite приложения.
+- [x] Реализовать teacher login и защищённую навигацию; отключить публичную регистрацию и оставить создание учётных записей преподавателя администраторам.
+- [x] Реализовать Dashboard со статистикой и состояниями загрузки/ошибки.
+- [-] Реализовать поиск, создание, чтение и редактирование студентов; добавлено обратимое архивирование с сохранением прогресса и блокировкой входа, физическое удаление аккаунтов не предоставляется.
+- [x] Реализовать блокировку/разблокировку, сброс пароля и просмотр профиля студента.
+- [-] Реализовать CRUD курсов, sections, lessons и assignments; добавлены редактирование основных данных курса и создание/редактирование/безопасное удаление разделов и уроков. Удаление раздела с уроками/экзаменом и урока с прогрессом/заданиями запрещено API; публикация и архивирование курса доступны. Физическое удаление курсов намеренно не добавлено во избежание потери истории обучения.
+- [x] Реализовать публикацию, архивирование и назначение курса группе.
+- [x] Реализовать просмотр progress и мониторинг submissions с проверкой/оценкой ответов преподавателем.
+- [x] Обработать loading, empty, error и permission denied-состояния в teacher workflows: списки учеников/групп/курсов, dashboard, course/assignment editors, submissions и matrix показывают состояния загрузки, пустоты и ошибки; API detail, 401/403/409 и сетевые сбои показываются явно, критичные списки/матрица поддерживают повтор запроса.
+- [x] Добавить frontend-тесты Dashboard, создания/редактирования студента и просмотра/оценки submissions.
+- [x] Добавить редактор основных данных курса, разделов и Markdown-уроков; покрыть create/update/delete сценарии и защиту истории обучения целевыми тестами.
+- [x] Показывать inline-сообщения и конкретные API ошибки (401/403/409/offline) при просмотре и управлении аккаунтами учеников; покрыть отказ архивации тестом.
+- [x] Показывать конкретные ошибки и empty/retry-состояния в действиях с группами, статусом курса и доступом к уроку в матрице; проверить API-denied случаи компонентными тестами.
 
 ## 6. Monaco и submission flow
 
-- [ ] Подключить Monaco Editor к Code Assignment.
-- [ ] Реализовать syntax highlighting, autocomplete, line numbers и темы.
-- [ ] Реализовать run, submit и reset code.
-- [ ] Не отправлять solution code на клиент.
-- [ ] Реализовать Submission со статусами PENDING, RUNNING, PASSED,
-  FAILED, TIMEOUT, RUNTIME_ERROR, COMPILE_ERROR и SYSTEM_ERROR.
-- [ ] Реализовать отображение результата без hidden test implementation.
-- [ ] Добавить обработку повторной отправки и allowed attempts.
+- [x] Подключить Monaco Editor к Code Assignment с ленивой загрузкой.
+- [x] Реализовать language mode для Python/JavaScript, autocomplete, line numbers и светлую/тёмную тему.
+- [x] Реализовать отправку исходного кода через существующий submission API и сброс к starter code; покрыть кодовый workflow тестом.
+- [x] Ограничить редактор лимитом 50 000 символов и показывать счётчик.
+- [x] Сохранить безопасное поведение: код не запускается, а hidden tests и solution code не запрашиваются student UI.
+- [x] Реализовать безопасный async run только через отдельный Code Runner на runner host/VM; Django, Celery worker и браузер не исполняют пользовательский код.
+- [x] Добавить статусы PENDING, RUNNING, PASSED, FAILED, TIMEOUT, RUNTIME_ERROR, COMPILE_ERROR и SYSTEM_ERROR, агрегированные результаты и безопасное отображение без hidden test implementation.
+- [x] Считать каждую новую submission отдельной попыткой, сериализовать проверку `max_attempts` и разрешить повторный запуск той же записи только после системной ошибки.
+- [x] Зафиксировать Code Assignment points/language/resource limits/hidden tests после первой отправки, сохраняя контракт уже поставленных в очередь запусков.
 
 ## 7. Code Runner и sandbox
 
-- [ ] Создать отдельный Code Runner service.
-- [ ] Связать Django, Celery и Redis в submission pipeline.
-- [ ] Реализовать запуск каждого submission в одноразовом sandbox-контейнере.
-- [ ] Ограничить CPU, RAM, execution time, процессы и filesystem.
-- [ ] Отключить network и запретить privileged containers.
-- [ ] Исключить arbitrary Docker commands и доступ к host filesystem.
-- [ ] Уничтожать sandbox после завершения или timeout.
-- [ ] Добавить sandbox-тесты для timeout, memory, malicious code и network.
-- [ ] Добавить явную обработку системных ошибок и повторяемость результата.
+- [x] Создать отдельный Code Runner service для развёртывания на выделенном runner host/VM.
+- [x] Связать Django, Celery и Redis в submission pipeline; в broker передаётся только submission ID.
+- [x] Реализовать запуск каждого hidden test в новом контейнере фиксированного runtime image.
+- [x] Ограничить CPU, RAM, execution time, процессы и filesystem.
+- [x] Отключить network, capabilities и privileged execution в sandbox containers.
+- [x] Исключить произвольные команды и host mounts из sandbox; backend не получает Docker socket.
+- [x] Уничтожать sandbox после завершения или timeout.
+- [x] Добавить unit-тесты конфигурации sandbox для timeout, ресурсов, отключённой сети, отсутствия host mounts и очистки контейнера.
+- [x] Добавить и проверить на локальном Linux-container engine интеграционные sandbox-тесты для фактического ограничения памяти, timeout, fork/PID, сетевого доступа, host Docker socket и Python/JavaScript execution.
+- [ ] Повторить интеграционные тесты на целевом выделенном Linux runner host перед production включением.
+- [x] Добавить явную обработку системных ошибок и безопасный повтор запуска.
 
 ## 8. Infrastructure и production
 
-- [ ] Создать `.env.example` и вынести секреты из repository.
-- [ ] Настроить Docker Compose для nginx, backend, frontends, postgres,
-  redis, celery и code-runner.
-- [ ] Настроить production startup без Django development server.
-- [ ] Настроить migrations, health checks, logs и service dependencies.
+- [x] Создать корневой и runner `.env.example`; секреты задаются окружением.
+- [x] Настроить application Compose для backend, двух frontends, postgres,
+  redis и celery; Code Runner Compose развёртывается отдельно на runner VM.
+- [x] Добавить Redis/Celery worker в application Compose, изолировать broker
+  отдельной внутренней сетью; Code Runner разворачивается отдельно на runner VM.
+- [x] Настроить production startup через Gunicorn, migrations и collectstatic.
+- [x] Настроить migrations, health checks и service dependencies; обе Compose
+  конфигурации валидируются с `.env.example`. Полный clean deployment ещё не
+  проверен.
+- [x] Сделать очередь Redis persistent и включить late-ack/requeue, task-ID idempotency и восстановление Celery delivery после потери worker.
 - [ ] Настроить CORS, CSRF, rate limiting и secure cookie/token policy.
-- [ ] Добавить CI для lint, type-check, backend, frontend и sandbox tests.
+- [x] Добавить CI для backend tests/migration checks, Student/Teacher type-check/build/tests и runner unit/sandbox integration tests; existing full-repo ESLint issues are not gated yet.
 
 ## 9. Финальная проверка Definition of Done
 

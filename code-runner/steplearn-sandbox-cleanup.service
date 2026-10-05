@@ -1,0 +1,9 @@
+[Unit]
+Description=Remove stale StepLearn code sandbox containers
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+Environment=MAX_SANDBOX_AGE_SECONDS=90
+ExecStart=/opt/steplearn-code-runner/cleanup-stale-sandboxes.sh

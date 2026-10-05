@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+/teacher-account.local.txt
 
 # Python
 __pycache__/

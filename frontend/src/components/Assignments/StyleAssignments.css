@@ -215,8 +215,19 @@ body[data-theme="dark"] .sl-ass-submit-btn {
   line-height: 1.5;
 }
 
-.sl-ass-upload-box textarea[aria-label="Исходный код"] {
-  font-family: Consolas, "Courier New", monospace;
+.sl-ass-code-editor {
+  overflow: hidden;
+  min-height: 360px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+}
+
+.sl-ass-editor-loading {
+  display: grid;
+  min-height: 360px;
+  place-items: center;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
 }
 
 .sl-ass-upload-actions button:disabled,

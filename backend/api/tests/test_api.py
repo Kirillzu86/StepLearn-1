@@ -1,4 +1,5 @@
 import tempfile
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -35,6 +36,12 @@ class StepLearnAPITests(APITestCase):
         question = Question.objects.create(course=self.course, text='2 + 2 = ?')
         Answer.objects.create(question=question, text='4', is_correct=True)
         Answer.objects.create(question=question, text='5', is_correct=False)
+
+    def test_health_endpoint_checks_database(self):
+        response = self.client.get('/health/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, {'status': 'ok', 'database': 'ok'})
 
     def test_role_profiles_are_created_for_student_and_teacher_accounts(self):
         self.assertEqual(
@@ -87,6 +94,68 @@ class StepLearnAPITests(APITestCase):
             'username': 'student', 'email': 'other@example.com', 'password': 'secret123'
         }, format='json')
         self.assertEqual(response.status_code, 404)
+
+    def test_teacher_registration_requires_admin(self):
+        payload = {
+            'username': 'new_teacher',
+            'email': 'new-teacher@example.com',
+            'password': 'secret123',
+        }
+        self.assertEqual(
+            self.client.post('/api/auth/teacher/register', payload, format='json').status_code,
+            401,
+        )
+        self.assertEqual(
+            self.client.post('/auth/teacher/register', payload, format='json').status_code,
+            401,
+        )
+        self.assertFalse(get_user_model().objects.filter(username='new_teacher').exists())
+
+        teacher = get_user_model().objects.create_user(
+            username='existing_teacher',
+            email='existing-teacher@example.com',
+            password='secret123',
+            role=User.TEACHER,
+            is_staff=True,
+        )
+        teacher_login = self.client.post('/api/auth/login', {
+            'login': teacher.username,
+            'password': 'secret123',
+        }, format='json')
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {teacher_login.data['access']}"
+        )
+        forbidden = self.client.post(
+            '/api/auth/teacher/register',
+            payload,
+            format='json',
+        )
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertFalse(get_user_model().objects.filter(username='new_teacher').exists())
+
+        admin = get_user_model().objects.create_user(
+            username='teacher_creator_admin',
+            email='teacher-creator-admin@example.com',
+            password='secret123',
+            role=User.ADMIN,
+        )
+        admin_login = self.client.post('/api/auth/login', {
+            'login': admin.username,
+            'password': 'secret123',
+        }, format='json')
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {admin_login.data['access']}"
+        )
+        created = self.client.post(
+            '/api/auth/teacher/register',
+            payload,
+            format='json',
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data['role'], User.TEACHER)
+        self.assertTrue(
+            get_user_model().objects.get(username='new_teacher').check_password('secret123')
+        )
 
     def test_login_by_username_and_email(self):
         # Username
@@ -164,6 +233,178 @@ class StepLearnAPITests(APITestCase):
         students_response = self.client.get('/api/v1/teacher/students')
         self.assertEqual(dashboard_response.status_code, 200)
         self.assertEqual(students_response.status_code, 200)
+        student_summary = next(
+            item for item in students_response.data if item['id'] == self.user.id
+        )
+        self.assertEqual(student_summary['progress_percent'], 0)
+        self.assertEqual(student_summary['completed_lessons'], 0)
+
+    def test_teacher_can_edit_student_profile_but_not_teacher_account(self):
+        teacher = get_user_model().objects.create_user(
+            username='editing_teacher',
+            email='editing-teacher@example.com',
+            password='secret123',
+            role=User.TEACHER,
+        )
+        other_teacher = get_user_model().objects.create_user(
+            username='protected_teacher',
+            email='protected-teacher@example.com',
+            password='secret123',
+            role=User.TEACHER,
+        )
+        login = self.client.post('/api/auth/login', {
+            'login': teacher.username,
+            'password': 'secret123',
+        }, format='json')
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login.data['access']}")
+
+        updated = self.client.patch(
+            f'/api/v1/teacher/students/{self.user.id}',
+            {
+                'first_name': 'Новое имя',
+                'last_name': 'Новая фамилия',
+                'email': 'updated-student@example.com',
+            },
+            format='json',
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.first_name, 'Новое имя')
+        self.assertEqual(self.user.email, 'updated-student@example.com')
+
+        forbidden_target = self.client.patch(
+            f'/api/v1/teacher/students/{other_teacher.id}',
+            {'first_name': 'Не должно измениться'},
+            format='json',
+        )
+        self.assertEqual(forbidden_target.status_code, 404)
+        other_teacher.refresh_from_db()
+        self.assertEqual(other_teacher.first_name, '')
+
+    def test_teacher_can_archive_and_restore_student_without_losing_history(self):
+        teacher = get_user_model().objects.create_user(
+            username='archive_teacher',
+            email='archive-teacher@example.com',
+            password='secret123',
+            role=User.TEACHER,
+        )
+        lesson = Lesson.objects.create(course=self.course, title='Completed lesson', order=1)
+        enrollment = Enrollment.objects.create(user=self.user, course=self.course)
+        progress = StudentLessonProgress.objects.create(
+            user=self.user,
+            lesson=lesson,
+            is_completed=True,
+        )
+        original_login = self.client.post('/api/auth/login', {
+            'login': self.user.username,
+            'password': 'secret123',
+        }, format='json')
+        self.assertEqual(original_login.status_code, 200)
+
+        self.client.force_authenticate(user=teacher)
+        invalid_payload = self.client.post(
+            f'/api/v1/teacher/students/{self.user.id}/archive',
+            {'is_archived': 'yes'},
+            format='json',
+        )
+        self.assertEqual(invalid_payload.status_code, 400)
+
+        archived = self.client.post(
+            f'/api/v1/teacher/students/{self.user.id}/archive',
+            {'is_archived': True},
+            format='json',
+        )
+        self.assertEqual(archived.status_code, 200)
+        self.assertTrue(archived.data['is_archived'])
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_archived)
+        self.assertTrue(self.user.is_active)
+        self.assertTrue(Enrollment.objects.filter(pk=enrollment.pk).exists())
+        self.assertTrue(StudentLessonProgress.objects.filter(pk=progress.pk).exists())
+
+        self.assertEqual(
+            self.client.post(
+                f'/api/v1/teacher/students/{self.user.id}/toggle-status'
+            ).status_code,
+            409,
+        )
+        default_list = self.client.get('/api/v1/teacher/students')
+        archived_list = self.client.get('/api/v1/teacher/students?include_archived=1')
+        self.assertNotIn(self.user.id, [item['id'] for item in default_list.data])
+        archived_student = next(item for item in archived_list.data if item['id'] == self.user.id)
+        self.assertTrue(archived_student['is_archived'])
+
+        self.client.force_authenticate(user=None)
+        self.client.credentials(HTTP_AUTHORIZATION=f"******{original_login.data['access']}")
+        self.assertEqual(self.client.get('/api/v1/teacher/dashboard').status_code, 401)
+        self.client.credentials()
+        self.assertEqual(
+            self.client.post('/api/auth/login', {
+                'login': self.user.username,
+                'password': 'secret123',
+            }, format='json').status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.post('/api/auth/refresh', {
+                'refresh': original_login.data['refresh'],
+            }, format='json').status_code,
+            401,
+        )
+
+        self.client.force_authenticate(user=teacher)
+        restored = self.client.post(
+            f'/api/v1/teacher/students/{self.user.id}/archive',
+            {'is_archived': False},
+            format='json',
+        )
+        self.assertEqual(restored.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_archived)
+        self.assertTrue(self.user.is_active)
+        self.assertTrue(Enrollment.objects.filter(pk=enrollment.pk).exists())
+        self.assertTrue(StudentLessonProgress.objects.filter(pk=progress.pk).exists())
+
+        blocked_student = get_user_model().objects.create_user(
+            username='blocked_archived_student',
+            email='blocked-archived-student@example.com',
+            password='secret123',
+        )
+        blocked_student.is_active = False
+        blocked_student.save(update_fields=['is_active'])
+        self.assertEqual(
+            self.client.post(
+                f'/api/v1/teacher/students/{blocked_student.id}/archive',
+                {'is_archived': True},
+                format='json',
+            ).status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client.post(
+                f'/api/v1/teacher/students/{blocked_student.id}/archive',
+                {'is_archived': False},
+                format='json',
+            ).status_code,
+            200,
+        )
+        blocked_student.refresh_from_db()
+        self.assertFalse(blocked_student.is_active)
+
+    def test_only_student_accounts_can_be_archived(self):
+        teacher = get_user_model().objects.create_user(
+            username='archive_role_teacher',
+            email='archive-role-teacher@example.com',
+            password='secret123',
+            role=User.TEACHER,
+        )
+        self.client.force_authenticate(user=teacher)
+        response = self.client.post(
+            f'/api/v1/teacher/students/{teacher.id}/archive',
+            {'is_archived': True},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 404)
 
     def test_teacher_can_create_student_with_working_temporary_credentials(self):
         teacher = get_user_model().objects.create_user(
@@ -805,6 +1046,17 @@ class StepLearnAPITests(APITestCase):
         )
         self.assertEqual(invalid_limits.status_code, 400)
 
+        missing_tests = self.client.post(
+            f'/api/v1/courses/{self.course.id}/assignments',
+            {
+                'title': 'Missing hidden tests',
+                'assignment_type': Assignment.TYPE_CODE,
+                'is_published': True,
+            },
+            format='json',
+        )
+        self.assertEqual(missing_tests.status_code, 400)
+
         created = self.client.post(
             f'/api/v1/courses/{self.course.id}/assignments',
             {
@@ -812,6 +1064,7 @@ class StepLearnAPITests(APITestCase):
                 'assignment_type': Assignment.TYPE_CODE,
                 'programming_language': Assignment.LANGUAGE_PYTHON,
                 'starter_code': 'def add(a, b):\\n    pass',
+                'max_attempts': 2,
                 'hints': ['Return the sum.'],
                 'time_limit_seconds': 3,
                 'memory_limit_mb': 64,
@@ -851,11 +1104,28 @@ class StepLearnAPITests(APITestCase):
             format='json',
         )
         self.assertEqual(submission.status_code, 201)
-        self.assertEqual(submission.data['status'], AssignmentSubmission.STATUS_SUBMITTED)
+        self.assertEqual(submission.data['status'], AssignmentSubmission.STATUS_PENDING)
         self.assertIsNone(submission.data['score'])
+        self.assertEqual(
+            submission.data['source_code'],
+            'def add(a, b):\\n    return a + b\\n',
+        )
+        self.assertEqual(submission.data['language'], Assignment.LANGUAGE_PYTHON)
         self.assertEqual(
             AssignmentSubmission.objects.get(pk=submission.data['id']).answer_text,
             'def add(a, b):\\n    return a + b\\n',
+        )
+        self.client.credentials(
+            HTTP_AUTHORIZATION='Bearer ' + teacher_login.data['access']
+        )
+        immutable_tests = self.client.patch(
+            f'/api/v1/assignments/{assignment_id}',
+            {'test_cases': [{'input_data': '3 4', 'expected_output': '7'}]},
+            format='json',
+        )
+        self.assertEqual(immutable_tests.status_code, 400)
+        self.client.credentials(
+            HTTP_AUTHORIZATION='Bearer ' + student_login.data['access']
         )
         oversized_source = self.client.post(
             f'/api/v1/assignments/{assignment_id}/submissions',
@@ -863,6 +1133,309 @@ class StepLearnAPITests(APITestCase):
             format='json',
         )
         self.assertEqual(oversized_source.status_code, 400)
+        accepted_retry = self.client.post(
+            f'/api/v1/assignments/{assignment_id}/submissions',
+            {'source_code': 'def add(a, b):\\n    return a + b\\n'},
+            format='json',
+        )
+        self.assertEqual(accepted_retry.status_code, 201)
+        exhausted_attempt = self.client.post(
+            f'/api/v1/assignments/{assignment_id}/submissions',
+            {'source_code': 'def add(a, b):\\n    return a + b\\n'},
+            format='json',
+        )
+        self.assertEqual(exhausted_attempt.status_code, 400)
+
+    def test_code_submission_run_endpoint_retries_only_system_failures(self):
+        teacher = get_user_model().objects.create_user(
+            username='runner_teacher',
+            email='runner-teacher@example.com',
+            password='secret123',
+            role=User.TEACHER,
+        )
+        self.course.author = teacher
+        self.course.save(update_fields=['author'])
+        Enrollment.objects.create(user=self.user, course=self.course)
+
+        self.client.credentials()
+        teacher_login = self.client.post('/api/auth/login', {
+            'login': teacher.username,
+            'password': 'secret123',
+        }, format='json')
+        self.client.credentials(
+            HTTP_AUTHORIZATION='Bearer ' + teacher_login.data['access']
+        )
+        assignment = self.client.post(
+            f'/api/v1/courses/{self.course.id}/assignments',
+            {
+                'title': 'Runner-safe task',
+                'assignment_type': Assignment.TYPE_CODE,
+                'programming_language': Assignment.LANGUAGE_PYTHON,
+                'starter_code': 'print("hi")',
+                'time_limit_seconds': 3,
+                'memory_limit_mb': 64,
+                'test_cases': [{'input_data': '', 'expected_output': 'hi'}],
+                'is_published': True,
+            },
+            format='json',
+        )
+        self.assertEqual(assignment.status_code, 201)
+
+        self.client.credentials()
+        student_login = self.client.post('/api/auth/login', {
+            'login': self.user.username,
+            'password': 'secret123',
+        }, format='json')
+        self.client.credentials(
+            HTTP_AUTHORIZATION='Bearer ' + student_login.data['access']
+        )
+        submission = self.client.post(
+            f"/api/v1/assignments/{assignment.data['id']}/submissions",
+            {'source_code': 'def add(a, b):\n    return a + b\n'},
+            format='json',
+        )
+        self.assertEqual(submission.status_code, 201)
+        self.assertEqual(submission.data['status'], AssignmentSubmission.STATUS_PENDING)
+
+        run_response = self.client.post(
+            f"/api/v1/submissions/{submission.data['id']}/run",
+            format='json',
+        )
+        self.assertEqual(run_response.status_code, 409)
+
+        code_submission = AssignmentSubmission.objects.get(pk=submission.data['id'])
+        code_submission.status = AssignmentSubmission.STATUS_SYSTEM_ERROR
+        code_submission.save(update_fields=['status'])
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            retry_response = self.client.post(
+                f"/api/v1/submissions/{submission.data['id']}/run",
+                format='json',
+            )
+        self.assertEqual(retry_response.status_code, 202)
+        self.assertEqual(retry_response.data['status'], AssignmentSubmission.STATUS_PENDING)
+        self.assertEqual(len(callbacks), 1)
+        with patch('api.views.enqueue_code_submission') as enqueue:
+            callbacks[0]()
+        enqueue.assert_called_once_with(submission.data['id'])
+        self.assertEqual(
+            AssignmentSubmission.objects.filter(
+                assignment_id=assignment.data['id'],
+                student=self.user,
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            AssignmentSubmission.objects.get(pk=submission.data['id']).status,
+            AssignmentSubmission.STATUS_PENDING,
+        )
+
+    def test_code_submission_task_persists_only_aggregate_results(self):
+        from api.tasks import run_code_submission
+
+        teacher = get_user_model().objects.create_user(
+            username='aggregate_runner_teacher',
+            email='aggregate-runner-teacher@example.com',
+            password='secret123',
+            role=User.TEACHER,
+        )
+        self.course.author = teacher
+        self.course.save(update_fields=['author'])
+        assignment = Assignment.objects.create(
+            course=self.course,
+            title='Aggregate runner task',
+            assignment_type=Assignment.TYPE_CODE,
+            is_published=True,
+        )
+        AssignmentTestCase.objects.create(
+            assignment=assignment,
+            input_data='secret input',
+            expected_output='secret expected output',
+        )
+        submission = AssignmentSubmission.objects.create(
+            assignment=assignment,
+            student=self.user,
+            source_code='print(input())',
+            status=AssignmentSubmission.STATUS_PENDING,
+        )
+
+        def execute_while_running(**kwargs):
+            self.assertEqual(
+                AssignmentSubmission.objects.get(pk=submission.id).status,
+                AssignmentSubmission.STATUS_RUNNING,
+            )
+            self.assertEqual(kwargs['language'], Assignment.LANGUAGE_PYTHON)
+            return {
+                'status': AssignmentSubmission.STATUS_PASSED,
+                'tests_passed': 1,
+                'tests_total': 1,
+                'execution_time_ms': 12,
+                'memory_used_mb': 8,
+            }
+
+        with patch(
+            'api.tasks.execute_submission',
+            side_effect=execute_while_running,
+        ) as execute:
+            run_code_submission.run(submission.id)
+
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, AssignmentSubmission.STATUS_PASSED)
+        self.assertEqual(submission.tests_passed, 1)
+        self.assertEqual(submission.tests_total, 1)
+        self.assertEqual(submission.score, assignment.points)
+        self.assertEqual(submission.execution_time_ms, 12)
+        self.assertNotIn('secret input', str(submission.response_data))
+        self.assertNotIn('secret expected output', str(submission.response_data))
+        execute.assert_called_once()
+
+    def test_code_submission_cannot_be_manually_graded(self):
+        teacher = get_user_model().objects.create_user(
+            username='code_grade_teacher',
+            email='code-grade-teacher@example.com',
+            password='secret123',
+            role=User.TEACHER,
+        )
+        self.course.author = teacher
+        self.course.save(update_fields=['author'])
+        assignment = Assignment.objects.create(
+            course=self.course,
+            title='Automatically graded code task',
+            assignment_type=Assignment.TYPE_CODE,
+            is_published=True,
+        )
+        submission = AssignmentSubmission.objects.create(
+            assignment=assignment,
+            student=self.user,
+            source_code='print("student code")',
+            status=AssignmentSubmission.STATUS_FAILED,
+            score=0,
+        )
+        teacher_login = self.client.post('/api/auth/login', {
+            'login': teacher.username,
+            'password': 'secret123',
+        }, format='json')
+        self.client.credentials(
+            HTTP_AUTHORIZATION='Bearer ' + teacher_login.data['access']
+        )
+
+        response = self.client.patch(
+            f'/api/v1/submissions/{submission.id}/grade',
+            {'score': assignment.points, 'feedback': 'override'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, AssignmentSubmission.STATUS_FAILED)
+        self.assertEqual(submission.score, 0)
+
+    def test_code_submission_errors_do_not_award_partial_score(self):
+        from api.tasks import run_code_submission
+
+        assignment = Assignment.objects.create(
+            course=self.course,
+            title='Timeout code task',
+            assignment_type=Assignment.TYPE_CODE,
+            points=10,
+        )
+        AssignmentTestCase.objects.create(
+            assignment=assignment,
+            input_data='',
+            expected_output='ok',
+        )
+        submission = AssignmentSubmission.objects.create(
+            assignment=assignment,
+            student=self.user,
+            source_code='while True: pass',
+            status=AssignmentSubmission.STATUS_PENDING,
+        )
+        with patch('api.tasks.execute_submission', return_value={
+            'status': AssignmentSubmission.STATUS_TIMEOUT,
+            'tests_passed': 0,
+            'tests_total': 1,
+            'execution_time_ms': 1000,
+            'memory_used_mb': 10,
+        }):
+            run_code_submission.run(submission.id)
+
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, AssignmentSubmission.STATUS_TIMEOUT)
+        self.assertIsNone(submission.score)
+
+    def test_code_submission_task_recovers_after_worker_redelivery(self):
+        from api.tasks import run_code_submission
+
+        assignment = Assignment.objects.create(
+            course=self.course,
+            title='Recoverable code task',
+            assignment_type=Assignment.TYPE_CODE,
+            is_published=True,
+        )
+        AssignmentTestCase.objects.create(
+            assignment=assignment,
+            input_data='',
+            expected_output='ok',
+        )
+        submission = AssignmentSubmission.objects.create(
+            assignment=assignment,
+            student=self.user,
+            source_code='print("ok")',
+            status=AssignmentSubmission.STATUS_RUNNING,
+            runner_task_id='same-celery-task-id',
+        )
+        with patch('api.tasks.execute_submission', return_value={
+            'status': AssignmentSubmission.STATUS_PASSED,
+            'tests_passed': 1,
+            'tests_total': 1,
+            'execution_time_ms': 10,
+            'memory_used_mb': 8,
+        }) as execute:
+            result = run_code_submission.apply(
+                args=[submission.id],
+                task_id='same-celery-task-id',
+            )
+
+        self.assertFalse(result.failed())
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, AssignmentSubmission.STATUS_PASSED)
+        execute.assert_called_once()
+
+    def test_code_submission_runner_unavailable_becomes_retryable_system_error(self):
+        from api.code_runner import CodeRunnerUnavailable
+        from api.tasks import run_code_submission
+
+        assignment = Assignment.objects.create(
+            course=self.course,
+            title='Runner unavailable task',
+            assignment_type=Assignment.TYPE_CODE,
+            is_published=True,
+        )
+        AssignmentTestCase.objects.create(
+            assignment=assignment,
+            input_data='',
+            expected_output='ok',
+        )
+        submission = AssignmentSubmission.objects.create(
+            assignment=assignment,
+            student=self.user,
+            source_code='print("ok")',
+            status=AssignmentSubmission.STATUS_PENDING,
+        )
+
+        with patch(
+            'api.tasks.execute_submission',
+            side_effect=CodeRunnerUnavailable('internal connection detail'),
+        ):
+            run_code_submission.run(submission.id)
+
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, AssignmentSubmission.STATUS_SYSTEM_ERROR)
+        self.assertEqual(
+            submission.error_message,
+            'Изолированный runner временно недоступен.',
+        )
+        self.assertNotIn('internal connection detail', submission.error_message)
+        self.assertIsNotNone(submission.finished_at)
 
     def test_file_upload_assignment_is_private_and_validated(self):
         teacher = get_user_model().objects.create_user(
@@ -1665,3 +2238,111 @@ class StepLearnAPITests(APITestCase):
         item = [c for c in list_resp.data if c['id'] == course_id][0]
         self.assertTrue(item['total_lessons'] >= 1)
         self.assertTrue(item['has_content'])
+
+    def test_teacher_can_edit_course_blocks_and_lessons_without_deleting_learning_history(self):
+        teacher = get_user_model().objects.create_user(
+            username='content_owner',
+            email='content-owner@example.com',
+            password='secret123',
+            role=User.TEACHER,
+        )
+        other_teacher = get_user_model().objects.create_user(
+            username='content_other',
+            email='content-other@example.com',
+            password='secret123',
+            role=User.TEACHER,
+        )
+        self.course.author = teacher
+        self.course.save(update_fields=['author'])
+        self.client.force_authenticate(user=teacher)
+
+        updated_course = self.client.patch(
+            f'/api/v1/course/{self.course.id}',
+            {
+                'title': 'Обновлённый курс',
+                'category': 'Разработка',
+                'level': 'intermediate',
+                'price': 250,
+            },
+            format='json',
+        )
+        self.assertEqual(updated_course.status_code, 200)
+        self.assertEqual(updated_course.data['title'], 'Обновлённый курс')
+        self.assertEqual(updated_course.data['level'], 'intermediate')
+        self.assertEqual(updated_course.data['price'], 250)
+
+        created_block = self.client.post(
+            f'/api/v1/courses/{self.course.id}/blocks',
+            {'title': 'Раздел 1', 'description': 'Начало', 'order': 1},
+            format='json',
+        )
+        self.assertEqual(created_block.status_code, 201)
+        block_id = created_block.data['id']
+        updated_block = self.client.patch(
+            f'/api/v1/blocks/{block_id}',
+            {'title': 'Основы', 'description': 'Обновлённое описание'},
+            format='json',
+        )
+        self.assertEqual(updated_block.status_code, 200)
+        self.assertEqual(updated_block.data['title'], 'Основы')
+        self.assertEqual(
+            self.client.post(
+                f'/api/v1/courses/{self.course.id}/blocks',
+                {'title': 'Дубликат порядка', 'order': 1},
+                format='json',
+            ).status_code,
+            400,
+        )
+
+        created_lesson = self.client.post(
+            f'/api/v1/courses/{self.course.id}/lessons',
+            {
+                'title': 'Первый урок',
+                'content': '# Теория',
+                'block_id': block_id,
+                'order': 1,
+                'lesson_type': 'theory',
+            },
+            format='json',
+        )
+        self.assertEqual(created_lesson.status_code, 201)
+        lesson_id = created_lesson.data['id']
+        updated_lesson = self.client.patch(
+            f'/api/v1/lessons/{lesson_id}',
+            {'title': 'Введение', 'content': '# Новая теория', 'lesson_type': 'practice'},
+            format='json',
+        )
+        self.assertEqual(updated_lesson.status_code, 200)
+        self.assertEqual(updated_lesson.data['title'], 'Введение')
+        self.assertEqual(updated_lesson.data['lesson_type'], 'practice')
+
+        StudentLessonProgress.objects.create(user=self.user, lesson_id=lesson_id, is_completed=True)
+        self.assertEqual(
+            self.client.delete(f'/api/v1/lessons/{lesson_id}').status_code,
+            409,
+        )
+        self.assertEqual(
+            self.client.delete(f'/api/v1/blocks/{block_id}').status_code,
+            409,
+        )
+        self.assertTrue(Lesson.objects.filter(pk=lesson_id).exists())
+        self.assertTrue(StudentLessonProgress.objects.filter(lesson_id=lesson_id).exists())
+
+        self.client.force_authenticate(user=other_teacher)
+        self.assertEqual(
+            self.client.patch(
+                f'/api/v1/blocks/{block_id}',
+                {'title': 'Чужой раздел'},
+                format='json',
+            ).status_code,
+            403,
+        )
+
+        self.client.force_authenticate(user=teacher)
+        self.assertEqual(
+            self.client.delete(f'/api/v1/lessons/{lesson_id}').status_code,
+            409,
+        )
+        StudentLessonProgress.objects.filter(lesson_id=lesson_id).delete()
+        self.assertEqual(self.client.delete(f'/api/v1/lessons/{lesson_id}').status_code, 204)
+        self.assertEqual(self.client.delete(f'/api/v1/blocks/{block_id}').status_code, 204)

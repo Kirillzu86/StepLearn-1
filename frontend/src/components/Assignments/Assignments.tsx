@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
 import {
   fetchAssignmentSubmissions,
   fetchCourseAssignments,
   fetchStudentCourses,
+  retryCodeSubmission,
   submitStudentAssignment,
 } from "../../api/api";
 import type {
@@ -18,6 +19,8 @@ import "../HomePage/StyleHomePage.css";
 import "../Sidebar/StyleSidebar.css";
 import "./StyleAssignments.css";
 
+const CodeEditor = lazy(() => import("./CodeEditor"));
+
 type AssignmentWithSubmission = {
   assignment: StudentAssignment;
   courseTitle: string;
@@ -27,6 +30,16 @@ type AssignmentWithSubmission = {
 
 type CourseSummary = { id: number; title: string };
 type Filter = "all" | "pending" | "submitted" | "graded";
+
+const TERMINAL_STATUSES = new Set([
+  "passed",
+  "failed",
+  "timeout",
+  "runtime_error",
+  "compile_error",
+  "system_error",
+  "graded",
+]);
 
 function getRequestError(error: unknown) {
   if (axios.isAxiosError(error)) {
@@ -41,28 +54,91 @@ function getRequestError(error: unknown) {
 
 function assignmentState(item: AssignmentWithSubmission): Exclude<Filter, "all"> {
   if (!item.latestSubmission) return "pending";
-  return item.latestSubmission.status === "graded" ? "graded" : "submitted";
+  return TERMINAL_STATUSES.has(item.latestSubmission.status) ? "graded" : "submitted";
+}
+
+function submissionStatusLabel(status: StudentAssignmentSubmission["status"]) {
+  const labels: Record<StudentAssignmentSubmission["status"], string> = {
+    pending: "В очереди на запуск",
+    running: "Код выполняется",
+    passed: "Все тесты пройдены",
+    failed: "Не все тесты пройдены",
+    timeout: "Превышено время выполнения",
+    runtime_error: "Ошибка выполнения",
+    compile_error: "Ошибка компиляции",
+    system_error: "Системная ошибка runner",
+    submitted: "Ожидает проверки",
+    graded: "Проверено",
+  };
+  return labels[status];
 }
 
 function AssignmentCard({
   item,
   onSubmitted,
+  onRetried,
+  onUpdated,
 }: {
   item: AssignmentWithSubmission;
   onSubmitted: (submission: StudentAssignmentSubmission) => void;
+  onRetried: (submission: StudentAssignmentSubmission) => void;
+  onUpdated: (submission: StudentAssignmentSubmission) => void;
 }) {
   const { assignment } = item;
+  const [currentSubmission, setCurrentSubmission] = useState(item.latestSubmission);
   const [isOpen, setIsOpen] = useState(false);
   const [answer, setAnswer] = useState("");
   const [selectedOptions, setSelectedOptions] = useState<Record<number, number[]>>({});
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const onUpdatedRef = useRef(onUpdated);
   const attemptsLeft = Math.max(0, assignment.max_attempts - item.attemptsUsed);
   const isPastDue = Boolean(assignment.due_at && new Date(assignment.due_at) < new Date());
   const canSubmit = attemptsLeft > 0 && !isPastDue;
   const state = assignmentState(item);
+
+  useEffect(() => {
+    setCurrentSubmission(item.latestSubmission);
+  }, [item.latestSubmission]);
+
+  useEffect(() => {
+    onUpdatedRef.current = onUpdated;
+  }, [onUpdated]);
+
+  useEffect(() => {
+    if (
+      !currentSubmission
+      || !["pending", "running"].includes(currentSubmission.status)
+    ) {
+      return;
+    }
+
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const submissions = await fetchAssignmentSubmissions(assignment.id);
+        const updated = submissions.find(({ id }) => id === currentSubmission.id);
+        if (updated && active && updated.status !== currentSubmission.status) {
+          setCurrentSubmission(updated);
+          onUpdatedRef.current(updated);
+        }
+      } catch (pollError) {
+        if (active) setError(getRequestError(pollError));
+      } finally {
+        if (active) timer = setTimeout(() => void poll(), 2000);
+      }
+    };
+    timer = setTimeout(() => void poll(), 2000);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [assignment.id, currentSubmission]);
 
   const toggleOption = (questionId: number, optionId: number, multiple: boolean) => {
     setSelectedOptions((previous) => {
@@ -124,11 +200,11 @@ function AssignmentCard({
     try {
       const submission = await submitStudentAssignment(assignment.id, payload);
       onSubmitted(submission);
-      setSuccess(
-        submission.score === null
+      setSuccess(assignment.assignment_type === "code"
+        ? "Решение отправлено в изолированный runner."
+        : submission.score === null
           ? "Ответ отправлен на проверку."
-          : `Ответ принят. Результат: ${submission.score} из ${assignment.points} баллов.`,
-      );
+          : `Ответ принят. Результат: ${submission.score} из ${assignment.points} баллов.`);
       setIsOpen(false);
       setAnswer("");
       setSelectedOptions({});
@@ -137,6 +213,22 @@ function AssignmentCard({
       setError(getRequestError(submitError));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const retryCodeRun = async () => {
+    if (!item.latestSubmission) return;
+    setRetrying(true);
+    setError(null);
+    try {
+      if (!currentSubmission) return;
+      const updated = await retryCodeSubmission(currentSubmission.id);
+      setCurrentSubmission(updated);
+      onRetried(updated);
+    } catch (retryError) {
+      setError(getRequestError(retryError));
+    } finally {
+      setRetrying(false);
     }
   };
 
@@ -177,12 +269,34 @@ function AssignmentCard({
         )}
       </div>
 
-      {item.latestSubmission && (
+      {currentSubmission && (
         <div className="sl-ass-result" aria-live="polite">
           <strong>Последняя отправка:</strong>{" "}
-          {new Date(item.latestSubmission.submitted_at).toLocaleString()}
-          {item.latestSubmission.has_file && ` · Файл: ${item.latestSubmission.original_file_name}`}
-          {item.latestSubmission.feedback && <p>{item.latestSubmission.feedback}</p>}
+          {new Date(currentSubmission.submitted_at).toLocaleString()}
+          {currentSubmission.has_file && ` · Файл: ${currentSubmission.original_file_name}`}
+          {assignment.assignment_type === "code" && (
+            <>
+              <p>Результат: {submissionStatusLabel(currentSubmission.status)}</p>
+              {currentSubmission.tests_total != null && (
+                <p>
+                  Тесты пройдены: {currentSubmission.tests_passed ?? 0} / {currentSubmission.tests_total}
+                  {currentSubmission.score != null && ` · Баллы: ${currentSubmission.score} / ${assignment.points}`}
+                </p>
+              )}
+              {currentSubmission.execution_time_ms != null && (
+                <p>Время выполнения: {currentSubmission.execution_time_ms} мс</p>
+              )}
+              {currentSubmission.error_message && (
+                <p role="status">{currentSubmission.error_message}</p>
+              )}
+              {currentSubmission.status === "system_error" && (
+                <button type="button" onClick={() => void retryCodeRun()} disabled={retrying}>
+                  {retrying ? "Повторяем запуск..." : "Повторить запуск"}
+                </button>
+              )}
+            </>
+          )}
+          {currentSubmission.feedback && <p>{currentSubmission.feedback}</p>}
         </div>
       )}
       {success && <p className="sl-ass-message sl-ass-message--success" role="status">{success}</p>}
@@ -222,23 +336,37 @@ function AssignmentCard({
             />
           ) : (
             <>
-              {assignment.assignment_type === "code" && assignment.starter_code && (
+              {assignment.assignment_type === "code" && (
                 <button
                   type="button"
                   className="sl-ass-cancel-btn"
-                  onClick={() => setAnswer(assignment.starter_code)}
+                  onClick={() => setAnswer(assignment.starter_code || "")}
                 >
-                  Вставить начальный код
+                  {assignment.starter_code ? "Сбросить к начальному коду" : "Очистить код"}
                 </button>
               )}
-              <textarea
-                aria-label={assignment.assignment_type === "code" ? "Исходный код" : "Текстовый ответ"}
-                placeholder={assignment.assignment_type === "code" ? "Введите решение..." : "Введите ваш ответ..."}
-                value={answer}
-                onChange={(event) => setAnswer(event.target.value)}
-                rows={assignment.assignment_type === "code" ? 12 : 5}
-                maxLength={assignment.assignment_type === "code" ? 50000 : undefined}
-              />
+              {assignment.assignment_type === "code" ? (
+                <>
+                  <Suspense fallback={<div className="sl-ass-editor-loading" role="status">Загрузка редактора кода...</div>}>
+                    <CodeEditor
+                      language={assignment.programming_language}
+                      value={answer}
+                      onChange={setAnswer}
+                    />
+                  </Suspense>
+                  <small>
+                    {answer.length.toLocaleString("ru-RU")} / {(50000).toLocaleString("ru-RU")} символов
+                  </small>
+                </>
+              ) : (
+                <textarea
+                  aria-label="Текстовый ответ"
+                  placeholder="Введите ваш ответ..."
+                  value={answer}
+                  onChange={(event) => setAnswer(event.target.value)}
+                  rows={5}
+                />
+              )}
               {assignment.assignment_type === "code" && assignment.hints.length > 0 && (
                 <details className="sl-ass-hints">
                   <summary>Подсказки</summary>
@@ -353,6 +481,16 @@ export default function Assignments() {
     ));
   };
 
+  const handleUpdated = useCallback((
+    assignmentId: number,
+    submission: StudentAssignmentSubmission,
+  ) => {
+    setItems((previous) => previous.map((item) => item.assignment.id === assignmentId
+      ? { ...item, latestSubmission: submission }
+      : item,
+    ));
+  }, []);
+
   return (
     <div className="sl-app">
       <Header />
@@ -377,8 +515,7 @@ export default function Assignments() {
               </div>
             ) : !isStudent ? (
               <div className="sl-ass-empty">
-                Просмотр заданий здесь доступен ученикам. Перейдите в{" "}
-                <Link to="/admin-panel">панель преподавателя</Link>.
+                Просмотр заданий доступен только ученикам.
               </div>
             ) : items.length === 0 ? (
               <div className="sl-ass-empty">
@@ -412,6 +549,12 @@ export default function Assignments() {
                       key={item.assignment.id}
                       item={item}
                       onSubmitted={(submission) => handleSubmitted(item.assignment.id, submission)}
+                      onRetried={(submission) => setItems((previous) => previous.map((current) =>
+                        current.assignment.id === item.assignment.id
+                          ? { ...current, latestSubmission: submission }
+                          : current,
+                      ))}
+                      onUpdated={(submission) => handleUpdated(item.assignment.id, submission)}
                     />
                   )) : (
                     <div className="sl-ass-empty">Заданий в этой категории пока нет.</div>

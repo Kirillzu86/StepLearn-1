@@ -5,7 +5,7 @@ import secrets
 import uuid
 
 from django.http import FileResponse
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import status
@@ -37,6 +37,7 @@ from .models import (
     User,
 )
 from .permissions import IsSelfOrTeacherOrAdmin, IsTeacherOrAdmin
+from .tasks import enqueue_code_submission
 from .serializers import (
     AssignmentSerializer,
     AssignmentCreateSerializer,
@@ -120,6 +121,14 @@ def course_list_item(course, enrollment=None, *, enrolled=False):
     }
 
 
+@api_view(['GET'])
+def health_check(request):
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT 1')
+        cursor.fetchone()
+    return Response({'status': 'ok', 'database': 'ok'})
+
+
 def course_learning_progress(user, course):
     lesson_records = {
         progress.lesson_id: progress
@@ -143,7 +152,11 @@ def course_learning_progress(user, course):
     def assignment_progress(assignment):
         latest = latest_submissions.get(assignment.id)
         is_completed = bool(
-            latest and latest.status == AssignmentSubmission.STATUS_GRADED
+            latest
+            and latest.status in {
+                AssignmentSubmission.STATUS_GRADED,
+                AssignmentSubmission.STATUS_PASSED,
+            }
         )
         return {
             'id': assignment.id,
@@ -295,8 +308,18 @@ def login(request):
 
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def teacher_register(request):
-    """Регистрация преподавательского аккаунта — принудительно ставит role='teacher'"""
+    """Create a teacher account for administrators; public teacher signup is disabled."""
+    if not (
+        request.user.role == User.ADMIN
+        or request.user.is_superuser
+    ):
+        return Response(
+            {'detail': 'Создавать учётные записи преподавателей может только администратор.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     data = request.data.copy()
     data['role'] = 'teacher'
     serializer = RegisterSerializer(data=data)
@@ -325,8 +348,15 @@ def teacher_login(request):
 def refresh_token(request):
     serializer = TokenRefreshSerializer(data=request.data)
     try:
+        refresh = RefreshToken(request.data.get('refresh', ''))
+        user_id = refresh.get('user_id')
+        if User.objects.filter(pk=user_id, is_archived=True).exists():
+            return Response(
+                {'detail': 'Эта учётная запись архивирована.'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
         serializer.is_valid(raise_exception=True)
-    except TokenError:
+    except (TokenError, TypeError, ValueError):
         return Response(
             {'detail': 'Invalid or expired refresh token.'},
             status=status.HTTP_401_UNAUTHORIZED,
@@ -761,15 +791,28 @@ def course_blocks(request, course_id):
                 {'detail': 'Изменять содержимое курса может только его автор или администратор.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        title = request.data.get('title', '').strip()
-        if not title:
+        title = request.data.get('title', '')
+        if not isinstance(title, str) or not title.strip():
             return Response({'detail': 'Название блока обязательно'}, status=status.HTTP_400_BAD_REQUEST)
+        title = title.strip()
         description = request.data.get('description', '')
+        if not isinstance(description, str):
+            return Response({'detail': 'Описание блока должно быть текстом.'}, status=status.HTTP_400_BAD_REQUEST)
         order = request.data.get('order')
         if order is None:
             last = course.blocks.order_by('-order').first()
             order = (last.order + 1) if last else 1
-        block = CourseBlock.objects.create(course=course, title=title, description=description, order=int(order))
+        try:
+            if isinstance(order, bool):
+                raise ValueError
+            order = int(order)
+        except (TypeError, ValueError):
+            return Response({'detail': 'Порядок блока должен быть целым числом.'}, status=status.HTTP_400_BAD_REQUEST)
+        if order < 1:
+            return Response({'detail': 'Порядок блока должен быть положительным числом.'}, status=status.HTTP_400_BAD_REQUEST)
+        if course.blocks.filter(order=order).exists():
+            return Response({'detail': 'В курсе уже есть блок с таким порядком.'}, status=status.HTTP_400_BAD_REQUEST)
+        block = CourseBlock.objects.create(course=course, title=title, description=description, order=order)
         return Response(
             CourseBlockSerializer(block, context={'request': request}).data,
             status=status.HTTP_201_CREATED,
@@ -789,6 +832,52 @@ def course_blocks(request, course_id):
     return Response(blocks_data)
 
 
+@api_view(['PATCH', 'DELETE'])
+def block_detail(request, block_id):
+    block = CourseBlock.objects.select_related('course').filter(pk=block_id).first()
+    if block is None:
+        return Response({'detail': 'Блок курса не найден'}, status=status.HTTP_404_NOT_FOUND)
+    if not can_manage_course(request.user, block.course):
+        return Response(
+            {'detail': 'Изменять блоки может только автор курса или администратор.'},
+            status=status.HTTP_403_FORBIDDEN if request.user.is_authenticated else status.HTTP_401_UNAUTHORIZED,
+        )
+
+    if request.method == 'DELETE':
+        if block.lessons.exists() or Exam.objects.filter(block=block).exists():
+            return Response(
+                {'detail': 'Сначала переместите или удалите уроки и экзамен этого блока.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        block.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    title = request.data.get('title', block.title)
+    if not isinstance(title, str) or not title.strip():
+        return Response({'detail': 'Название блока обязательно.'}, status=status.HTTP_400_BAD_REQUEST)
+    description = request.data.get('description', block.description)
+    if not isinstance(description, str):
+        return Response({'detail': 'Описание блока должно быть текстом.'}, status=status.HTTP_400_BAD_REQUEST)
+    order = block.order
+    if 'order' in request.data:
+        try:
+            if isinstance(request.data['order'], bool):
+                raise ValueError
+            order = int(request.data['order'])
+        except (TypeError, ValueError):
+            return Response({'detail': 'Порядок блока должен быть целым числом.'}, status=status.HTTP_400_BAD_REQUEST)
+        if order < 1:
+            return Response({'detail': 'Порядок блока должен быть положительным числом.'}, status=status.HTTP_400_BAD_REQUEST)
+        if CourseBlock.objects.filter(course=block.course, order=order).exclude(pk=block.pk).exists():
+            return Response({'detail': 'В курсе уже есть блок с таким порядком.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    block.title = title.strip()
+    block.description = description
+    block.order = order
+    block.save()
+    return Response(CourseBlockSerializer(block, context={'request': request}).data)
+
+
 @api_view(['POST'])
 def course_lessons_create(request, course_id):
     if not IsTeacherOrAdmin().has_permission(request, None):
@@ -806,24 +895,48 @@ def course_lessons_create(request, course_id):
             status=status.HTTP_403_FORBIDDEN if request.user.is_authenticated else status.HTTP_401_UNAUTHORIZED,
         )
 
-    title = request.data.get('title', '').strip()
-    if not title:
+    title = request.data.get('title', '')
+    if not isinstance(title, str) or not title.strip():
         return Response({'detail': 'Название урока обязательно'}, status=status.HTTP_400_BAD_REQUEST)
+    title = title.strip()
 
     description = request.data.get('description', '')
     content = request.data.get('content', '')
+    if not isinstance(description, str) or not isinstance(content, str):
+        return Response({'detail': 'Описание и содержимое урока должны быть текстом.'}, status=status.HTTP_400_BAD_REQUEST)
     block_id = request.data.get('block_id')
-    lesson_type = request.data.get('lesson_type', 'theory')
-    is_mandatory = bool(request.data.get('is_mandatory', True))
     order = request.data.get('order')
 
     if order is None:
         last_lesson = course.lessons.order_by('-order').first()
         order = (last_lesson.order + 1) if last_lesson else 1
     else:
-        order = int(order)
+        try:
+            if isinstance(order, bool):
+                raise ValueError
+            order = int(order)
+        except (TypeError, ValueError):
+            return Response({'detail': 'Порядок урока должен быть целым числом.'}, status=status.HTTP_400_BAD_REQUEST)
+    if order < 1:
+        return Response({'detail': 'Порядок урока должен быть положительным числом.'}, status=status.HTTP_400_BAD_REQUEST)
+    if course.lessons.filter(order=order).exists():
+        return Response({'detail': 'В курсе уже есть урок с таким порядком.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    block = CourseBlock.objects.filter(pk=block_id, course=course).first() if block_id else None
+    block = None
+    if block_id:
+        try:
+            block_id = int(block_id)
+        except (TypeError, ValueError):
+            return Response({'detail': 'Некорректный идентификатор блока.'}, status=status.HTTP_400_BAD_REQUEST)
+        block = CourseBlock.objects.filter(pk=block_id, course=course).first()
+        if block is None:
+            return Response({'detail': 'Блок не принадлежит этому курсу.'}, status=status.HTTP_400_BAD_REQUEST)
+    lesson_type = request.data.get('lesson_type', 'theory')
+    if not isinstance(lesson_type, str) or lesson_type not in dict(Lesson.LESSON_TYPE_CHOICES):
+        return Response({'detail': 'Недопустимый тип урока.'}, status=status.HTTP_400_BAD_REQUEST)
+    is_mandatory = request.data.get('is_mandatory', True)
+    if not isinstance(is_mandatory, bool):
+        return Response({'detail': 'Поле обязательности урока должно быть логическим значением.'}, status=status.HTTP_400_BAD_REQUEST)
 
     lesson = Lesson.objects.create(
         course=course,
@@ -920,23 +1033,59 @@ def lesson_detail(request, lesson_id):
         )
 
     if request.method == 'DELETE':
+        if lesson.student_progresses.exists() or lesson.assignments.exists():
+            return Response(
+                {'detail': 'Нельзя удалить урок с прогрессом учеников или связанными заданиями.'},
+                status=status.HTTP_409_CONFLICT,
+            )
         lesson.delete()
-        return Response({'status': 'deleted'})
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
-    title = request.data.get('title')
-    if title:
-        lesson.title = title.strip()
+    title = request.data.get('title', lesson.title)
+    if not isinstance(title, str) or not title.strip():
+        return Response({'detail': 'Название урока обязательно.'}, status=status.HTTP_400_BAD_REQUEST)
+    lesson.title = title.strip()
     if 'description' in request.data:
+        if not isinstance(request.data['description'], str):
+            return Response({'detail': 'Описание урока должно быть текстом.'}, status=status.HTTP_400_BAD_REQUEST)
         lesson.description = request.data['description']
     if 'content' in request.data:
+        if not isinstance(request.data['content'], str):
+            return Response({'detail': 'Содержимое урока должно быть текстом.'}, status=status.HTTP_400_BAD_REQUEST)
         lesson.content = request.data['content']
     if 'order' in request.data:
-        lesson.order = int(request.data['order'])
+        try:
+            if isinstance(request.data['order'], bool):
+                raise ValueError
+            order = int(request.data['order'])
+        except (TypeError, ValueError):
+            return Response({'detail': 'Порядок урока должен быть целым числом.'}, status=status.HTTP_400_BAD_REQUEST)
+        if order < 1:
+            return Response({'detail': 'Порядок урока должен быть положительным числом.'}, status=status.HTTP_400_BAD_REQUEST)
+        if Lesson.objects.filter(course=lesson.course, order=order).exclude(pk=lesson.pk).exists():
+            return Response({'detail': 'В курсе уже есть урок с таким порядком.'}, status=status.HTTP_400_BAD_REQUEST)
+        lesson.order = order
     if 'lesson_type' in request.data:
-        lesson.lesson_type = request.data['lesson_type']
+        lesson_type = request.data['lesson_type']
+        if not isinstance(lesson_type, str) or lesson_type not in dict(Lesson.LESSON_TYPE_CHOICES):
+            return Response({'detail': 'Недопустимый тип урока.'}, status=status.HTTP_400_BAD_REQUEST)
+        lesson.lesson_type = lesson_type
+    if 'is_mandatory' in request.data:
+        if not isinstance(request.data['is_mandatory'], bool):
+            return Response({'detail': 'Поле обязательности урока должно быть логическим значением.'}, status=status.HTTP_400_BAD_REQUEST)
+        lesson.is_mandatory = request.data['is_mandatory']
     if 'block_id' in request.data:
         b_id = request.data['block_id']
-        lesson.block = CourseBlock.objects.filter(pk=b_id, course=lesson.course).first() if b_id else None
+        if b_id in (None, ''):
+            lesson.block = None
+        else:
+            try:
+                b_id = int(b_id)
+            except (TypeError, ValueError):
+                return Response({'detail': 'Некорректный идентификатор блока.'}, status=status.HTTP_400_BAD_REQUEST)
+            lesson.block = CourseBlock.objects.filter(pk=b_id, course=lesson.course).first()
+            if lesson.block is None:
+                return Response({'detail': 'Блок не принадлежит этому курсу.'}, status=status.HTTP_400_BAD_REQUEST)
 
     lesson.save()
     return Response(LessonSerializer(lesson, context={'request': request}).data)
@@ -1038,6 +1187,7 @@ def assignment_detail(request, assignment_id):
 
 @api_view(['GET', 'POST'])
 @parser_classes([JSONParser, MultiPartParser, FormParser])
+@transaction.atomic
 def assignment_submissions(request, assignment_id):
     assignment = Assignment.objects.select_related('course', 'lesson').filter(pk=assignment_id).first()
     if assignment is None:
@@ -1066,6 +1216,10 @@ def assignment_submissions(request, assignment_id):
         return Response({'detail': 'Authentication credentials were not provided.'}, status=status.HTTP_401_UNAUTHORIZED)
     if request.user.role != User.STUDENT:
         return Response({'detail': 'Отправлять ответы может только ученик.'}, status=status.HTTP_403_FORBIDDEN)
+    assignment = Assignment.objects.select_for_update().select_related(
+        'course',
+        'lesson',
+    ).get(pk=assignment_id)
     if (
         not assignment.is_published
         or not student_has_course_access(request.user, assignment.course)
@@ -1077,6 +1231,14 @@ def assignment_submissions(request, assignment_id):
         return Response({'detail': 'Задание недоступно.'}, status=status.HTTP_403_FORBIDDEN)
     if assignment.due_at and assignment.due_at < timezone.now():
         return Response({'detail': 'Срок сдачи задания истёк.'}, status=status.HTTP_400_BAD_REQUEST)
+    if (
+        assignment.assignment_type == Assignment.TYPE_CODE
+        and not assignment.test_cases.exists()
+    ):
+        return Response(
+            {'detail': 'Для запуска этого задания преподаватель должен добавить hidden tests.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     if assignment.submissions.filter(student=request.user).count() >= assignment.max_attempts:
         return Response({'detail': 'Достигнут лимит попыток.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1160,14 +1322,103 @@ def assignment_submissions(request, assignment_id):
             'source_code',
             serializer.validated_data.get('answer_text', ''),
         ),
+        source_code=serializer.validated_data.get('source_code', ''),
+        language=(
+            assignment.programming_language
+            if assignment.assignment_type == Assignment.TYPE_CODE
+            else ''
+        ),
         response_data=response_data,
         score=score,
-        status=submission_status,
+        status=(
+            AssignmentSubmission.STATUS_PENDING
+            if assignment.assignment_type == Assignment.TYPE_CODE
+            else submission_status
+        ),
         graded_at=graded_at,
     )
+    if assignment.assignment_type == Assignment.TYPE_CODE:
+        transaction.on_commit(
+            lambda: enqueue_code_submission(submission.id),
+            robust=True,
+        )
     return Response(
         AssignmentSubmissionSerializer(submission).data,
         status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(['POST'])
+@transaction.atomic
+def run_submission(request, submission_id):
+    if not request.user.is_authenticated:
+        return Response(
+            {'detail': 'Authentication credentials were not provided.'},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    submission = AssignmentSubmission.objects.select_related(
+        'assignment__course',
+        'assignment__lesson',
+        'student',
+    ).filter(pk=submission_id).first()
+    if submission is None:
+        return Response({'detail': 'Ответ не найден.'}, status=status.HTTP_404_NOT_FOUND)
+
+    is_submission_owner = (
+        request.user.role == User.STUDENT
+        and request.user.id == submission.student_id
+    )
+    if not is_submission_owner:
+        return Response({'detail': 'Нет доступа к запуску кода.'}, status=status.HTTP_403_FORBIDDEN)
+
+    if submission.assignment.assignment_type != Assignment.TYPE_CODE:
+        return Response(
+            {'detail': 'Запуск кода доступен только для Code Assignment.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    submission = AssignmentSubmission.objects.select_for_update().get(pk=submission_id)
+    if submission.status != AssignmentSubmission.STATUS_SYSTEM_ERROR:
+        return Response(
+            {'detail': 'Повторно запустить можно только ответ с системной ошибкой.'},
+            status=status.HTTP_409_CONFLICT,
+        )
+    if (
+        not submission.assignment.is_published
+        or not student_has_course_access(request.user, submission.assignment.course)
+        or (
+            submission.assignment.lesson_id
+            and not student_can_access_lesson(request.user, submission.assignment.lesson)
+        )
+    ):
+        return Response({'detail': 'Задание больше недоступно.'}, status=status.HTTP_403_FORBIDDEN)
+
+    submission.status = AssignmentSubmission.STATUS_PENDING
+    submission.error_message = ''
+    submission.finished_at = None
+    submission.tests_passed = None
+    submission.tests_total = None
+    submission.execution_time_ms = None
+    submission.memory_used_mb = None
+    submission.score = None
+    submission.save(update_fields=[
+        'status',
+        'error_message',
+        'finished_at',
+        'tests_passed',
+        'tests_total',
+        'execution_time_ms',
+        'memory_used_mb',
+        'score',
+    ])
+    transaction.on_commit(
+        lambda: enqueue_code_submission(submission.id),
+        robust=True,
+    )
+    return Response(
+        AssignmentSubmissionSerializer(submission).data,
+        status=status.HTTP_202_ACCEPTED,
     )
 
 
@@ -1217,6 +1468,11 @@ def grade_assignment_submission(request, submission_id):
         return Response({'detail': 'Authentication credentials were not provided.'}, status=status.HTTP_401_UNAUTHORIZED)
     if not can_manage_course(request.user, submission.assignment.course):
         return Response({'detail': 'Проверять ответы может только автор курса или администратор.'}, status=status.HTTP_403_FORBIDDEN)
+    if submission.assignment.assignment_type == Assignment.TYPE_CODE:
+        return Response(
+            {'detail': 'Code Assignment оценивается автоматически изолированным runner.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     serializer = AssignmentSubmissionGradeSerializer(
         submission,
@@ -1527,25 +1783,12 @@ def exam_submit(request, exam_id):
 def teacher_dashboard(request):
     """Сводный дашборд преподавателя (Раздел 20 плана)"""
     students = User.objects.filter(role='student')
-    groups = StudyGroup.objects.all()
-    courses = Course.objects.all()
-    if request.user.role == User.TEACHER and not request.user.is_staff and not request.user.is_superuser:
-        groups = groups.filter(teacher=request.user)
-        courses = courses.filter(author=request.user)
-        students = students.filter(
-            Q(study_groups__teacher=request.user)
-            | Q(enrollments__course__author=request.user)
-        ).distinct()
-
     total_students = students.count()
-    total_groups = groups.count()
-    total_courses = courses.count()
+    total_groups = StudyGroup.objects.count()
+    total_courses = Course.objects.count()
     week_ago = timezone.now() - datetime.timedelta(days=7)
     active_students = students.filter(last_activity__gte=week_ago).count()
-    completed_enrollments = Enrollment.objects.filter(
-        user__in=students,
-        progress_percentage=100,
-    ).count()
+    completed_enrollments = Enrollment.objects.filter(progress_percentage=100).count()
 
     return Response({
         'total_students': total_students,
@@ -1562,8 +1805,12 @@ def teacher_students_list(request):
     """Список студентов для преподавателя с фильтрами и прогрессом (Раздел 21 плана)"""
     query = request.query_params.get('q', '').strip()
     group_id = request.query_params.get('group_id')
+    include_archived = request.query_params.get('include_archived') == '1'
 
-    qs = User.objects.filter(role='student').annotate(
+    qs = User.objects.filter(role='student')
+    if not include_archived:
+        qs = qs.filter(is_archived=False)
+    qs = qs.annotate(
         completed_lessons_count=Count(
             'lesson_progresses',
             filter=Q(lesson_progresses__is_completed=True),
@@ -1596,6 +1843,7 @@ def teacher_students_list(request):
             'last_name': student.last_name,
             'email': student.email,
             'is_active': student.is_active,
+            'is_archived': student.is_archived,
             'group_id': primary_group.id if primary_group else None,
             'group_name': primary_group.name if primary_group else 'Без группы',
             'courses_count': len(enrollments),
@@ -1608,7 +1856,7 @@ def teacher_students_list(request):
     return Response(result)
 
 
-@api_view(['GET'])
+@api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated, IsTeacherOrAdmin])
 def teacher_student_detail(request, student_id):
     """Подробная карточка студента для преподавателя (Раздел 22 плана)"""
@@ -1621,6 +1869,17 @@ def teacher_student_detail(request, student_id):
         ).get(pk=student_id)
     except User.DoesNotExist:
         return Response({'detail': 'Студент не найден'}, status=status.HTTP_404_NOT_FOUND)
+    if student.role != User.STUDENT:
+        return Response({'detail': 'Указанная учётная запись не является ученической.'}, status=status.HTTP_404_NOT_FOUND)
+    if request.method == 'PATCH':
+        serializer = UserUpdateSerializer(
+            student,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        updated_student = serializer.save()
+        return Response(UserSerializer(updated_student).data)
 
     primary_group = student.study_groups.first()
 
@@ -1678,6 +1937,7 @@ def teacher_student_detail(request, student_id):
         'last_name': student.last_name,
         'email': student.email,
         'is_active': student.is_active,
+        'is_archived': student.is_archived,
         'date_joined': student.date_joined,
         'last_activity': student.last_activity,
         'group': {'id': primary_group.id, 'name': primary_group.name} if primary_group else None,
@@ -1710,6 +1970,11 @@ def reset_student_password(request, student_id):
     except User.DoesNotExist:
         return Response({'detail': 'Студент не найден'}, status=status.HTTP_404_NOT_FOUND)
 
+    if student.is_archived:
+        return Response(
+            {'detail': 'Сначала восстановите ученика из архива.'},
+            status=status.HTTP_409_CONFLICT,
+        )
     new_password = secrets.token_urlsafe(12)
     student.set_password(new_password)
     student.must_change_password = True
@@ -1730,6 +1995,11 @@ def reset_student_progress(request, student_id):
     except User.DoesNotExist:
         return Response({'detail': 'Студент не найден'}, status=status.HTTP_404_NOT_FOUND)
 
+    if student.is_archived:
+        return Response(
+            {'detail': 'Сначала восстановите ученика из архива.'},
+            status=status.HTTP_409_CONFLICT,
+        )
     course_id = request.data.get('course_id')
     if course_id:
         StudentLessonProgress.objects.filter(user=student, lesson__course_id=course_id).delete()
@@ -1759,12 +2029,43 @@ def toggle_student_status(request, student_id):
     except User.DoesNotExist:
         return Response({'detail': 'Студент не найден'}, status=status.HTTP_404_NOT_FOUND)
 
+    if student.is_archived:
+        return Response(
+            {'detail': 'Сначала восстановите ученика из архива.'},
+            status=status.HTTP_409_CONFLICT,
+        )
     student.is_active = not student.is_active
     student.save()
     return Response({
         'student_id': student.id,
         'is_active': student.is_active,
         'status_text': 'Активен' if student.is_active else 'Заблокирован'
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsTeacherOrAdmin])
+def set_student_archived(request, student_id):
+    try:
+        student = User.objects.get(pk=student_id, role=User.STUDENT)
+    except User.DoesNotExist:
+        return Response({'detail': 'Студент не найден'}, status=status.HTTP_404_NOT_FOUND)
+
+    archived = request.data.get('is_archived')
+    if not isinstance(archived, bool):
+        return Response(
+            {'detail': 'Поле is_archived должно быть логическим значением.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if student.is_archived == archived:
+        return Response({'student_id': student.id, 'is_archived': student.is_archived})
+
+    student.is_archived = archived
+    student.save(update_fields=['is_archived'])
+    return Response({
+        'student_id': student.id,
+        'is_archived': student.is_archived,
+        'status_text': 'Архивирован' if archived else 'Восстановлен из архива',
     })
 
 

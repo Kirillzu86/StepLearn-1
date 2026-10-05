@@ -1,73 +1,41 @@
-# React + TypeScript + Vite
+# StepLearn frontends
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+StepLearn has two independent React applications that use the same Django API
+and PostgreSQL database:
 
-Currently, two official plugins are available:
+- Student website: `frontend`
+- Teacher website: `frontend-teacher`
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Local development
 
-## React Compiler
+Start Django on `http://localhost:8000`, then run each frontend in a separate
+terminal from the repository root:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```powershell
+npm --prefix frontend run dev
+npm --prefix frontend-teacher run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The student website uses Vite on port `5173`; the teacher website uses port
+`3001`. Both development servers proxy API requests to Django. The teacher
+proxy target can be changed with `VITE_BACKEND_PROXY_TARGET`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Docker Compose
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Configure the root `.env` file using `.env.example`, then run from the
+repository root:
+
+```powershell
+docker compose up --build
 ```
+
+The student website is available on `FRONTEND_PORT` (default `80`), and the
+teacher website on `TEACHER_FRONTEND_PORT` (default `3001`). Each frontend is
+its own service; both Nginx instances forward API routes to the same `backend`
+service. Django and both frontends use the single PostgreSQL service and volume
+configured in the root Compose file.
+
+Set `VITE_TEACHER_APP_URL` to the externally reachable teacher website URL to
+show teacher sign-in links on the student website. For separate production
+domains, configure each domain in Django's `CORS_ALLOWED_ORIGINS` and
+`CSRF_TRUSTED_ORIGINS`, or keep the provided same-origin Nginx API proxy.

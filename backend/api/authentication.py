@@ -9,6 +9,8 @@ class PasswordChangeRequiredAuthentication(JWTAuthentication):
             return None
 
         user, token = authenticated
+        if user.is_archived:
+            raise AuthenticationFailed('Эта учётная запись архивирована.')
         allowed_path = request.path.rstrip('/').endswith('/auth/change-password')
         if user.must_change_password and not allowed_path:
             raise AuthenticationFailed('Сначала необходимо сменить временный пароль.')

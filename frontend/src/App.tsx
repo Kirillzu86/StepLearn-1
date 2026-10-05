@@ -6,11 +6,7 @@ import HomePage from "./components/HomePage/Homepage";
 import LogPage from "./components/LogPage/LogPage";
 import Catalog from "./components/Catalog/Catalog";
 import CourseDetail from './components/CourseDetail/courseDetail';
-import CreateCourse from './components/CreateCourse/CreateCourse';
 import Profile from './components/Profile/Profile';
-import AdminPanel from './components/AdminPanel/AdminPanel';
-import TeacherLogin from './components/TeacherAuth/TeacherLogin';
-import TeacherRegister from './components/TeacherAuth/TeacherRegister';
 import Notifications from './components/Notifications/Notifications';
 import Settings from './components/Settings/Settings';
 import Professions from './components/Professions/Professions';
@@ -66,7 +62,7 @@ function RouteGuard({
   if (!user?.access || user.must_change_password) {
     return (
       <Navigate
-        to={roles?.includes("teacher") || roles?.includes("admin") ? "/teacher-login" : "/login"}
+        to="/login"
         replace
         state={{ from: location.pathname }}
       />
@@ -112,24 +108,12 @@ function App() {
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LogPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/catalog" element={<Catalog theme={theme} toggleTheme={toggleTheme} />} />
-      <Route path="/create-course" element={
-        <RouteGuard roles={["teacher", "admin"]}>
-          <CreateCourse theme={theme} toggleTheme={toggleTheme} />
-        </RouteGuard>
-      } />
       <Route path="/course/:id" element={<CourseDetail theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/profile" element={
         <RouteGuard>
           <Profile theme={theme} toggleTheme={toggleTheme} />
         </RouteGuard>
       } />
-      <Route path="/admin-panel" element={
-        <RouteGuard roles={["teacher", "admin"]}>
-          <AdminPanel theme={theme} toggleTheme={toggleTheme} />
-        </RouteGuard>
-      } />
-      <Route path="/teacher-login" element={<TeacherLogin theme={theme} toggleTheme={toggleTheme} />} />
-      <Route path="/teacher-register" element={<TeacherRegister theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/notifications" element={<Notifications theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/settings" element={<Settings theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/professions" element={<Professions theme={theme} toggleTheme={toggleTheme} />} />
@@ -152,6 +136,7 @@ function App() {
         </RouteGuard>
       } />
       <Route path="/help" element={<Help theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

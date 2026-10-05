@@ -10,6 +10,27 @@ services:
       - pgdata:/var/lib/postgresql/data
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - queue-network
 
   backend:
     build:
@@ -17,7 +38,10 @@ services:
       dockerfile: Dockerfile
     restart: always
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
       - private_uploads:/app/private_uploads
     expose:
@@ -37,22 +61,82 @@ services:
       CORS_ALLOW_ALL_ORIGINS: ${CORS_ALLOW_ALL_ORIGINS:-0}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?Set CORS_ALLOWED_ORIGINS in the root .env file}
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?Set CSRF_TRUSTED_ORIGINS in the root .env file}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-0}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      CODE_RUNNER_URL: ${CODE_RUNNER_URL:-}
+      CODE_RUNNER_TOKEN: ${CODE_RUNNER_TOKEN:-}
     networks:
       - app-network
+      - queue-network
       - coolify
     labels:
       - "coolify.managed=true"
       - "coolify.port=8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    command: ["celery", "-A", "steplearn", "worker", "--loglevel=INFO", "--concurrency=2"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - private_uploads:/app/private_uploads
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in the root .env file}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in the root .env file}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}
+      POSTGRES_PORT: 5432
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in the root .env file}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in the root .env file}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-0}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?Set DJANGO_ALLOWED_HOSTS in the root .env file}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-0}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      CODE_RUNNER_URL: ${CODE_RUNNER_URL:-}
+      CODE_RUNNER_TOKEN: ${CODE_RUNNER_TOKEN:-}
+    networks:
+      - app-network
+      - queue-network
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from steplearn.celery import app; raise SystemExit(0 if app.control.ping(timeout=3) else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+        VITE_API_URL: ${VITE_API_URL:-}
+        VITE_TEACHER_APP_URL: ${VITE_TEACHER_APP_URL:-http://localhost:3001}
     restart: always
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     expose:
       - "80"
     ports:
@@ -64,13 +148,36 @@ services:
       - "coolify.managed=true"
       - "coolify.port=80"
 
+  frontend-teacher:
+    build:
+      context: ./frontend-teacher
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "80"
+    ports:
+      - "${TEACHER_FRONTEND_PORT:-3001}:80"
+    networks:
+      - app-network
+      - coolify
+    labels:
+      - "coolify.managed=true"
+      - "coolify.port=80"
+
 networks:
   app-network:
     driver: bridge
+  queue-network:
+    driver: bridge
+    internal: true
   coolify:
     name: coolify
     external: true
 
 volumes:
   pgdata:
+  redisdata:
   private_uploads:

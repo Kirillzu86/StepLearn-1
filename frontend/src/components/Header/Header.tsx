@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { FiSearch, FiSettings, FiBell, FiChevronDown, FiSun, FiMoon } from 'react-icons/fi';
+import { TEACHER_APP_URL } from '../../api/appUrls';
 import './StyleHeader.css';
 
 const Header: React.FC = () => {
@@ -129,10 +130,10 @@ const Header: React.FC = () => {
 
                 {currentUser ? (
                     <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {(currentUser.role === 'teacher' || currentUser.role === 'admin' || currentUser.is_staff) && (
-                            <Link to="/admin-panel" className="sl-header__auth-login" style={{ background: 'linear-gradient(135deg, #1E1B4B 0%, #312E81 100%)', color: '#fff', fontWeight: 600 }}>
+                        {TEACHER_APP_URL && (currentUser.role === 'teacher' || currentUser.role === 'admin' || currentUser.is_staff) && (
+                            <a href={TEACHER_APP_URL} className="sl-header__auth-login" style={{ background: 'linear-gradient(135deg, #1E1B4B 0%, #312E81 100%)', color: '#fff', fontWeight: 600 }}>
                                 Панель учителя
-                            </Link>
+                            </a>
                         )}
                         <button
                             className="sl-header__user"
@@ -158,10 +159,10 @@ const Header: React.FC = () => {
                                 <button className="sl-header__dropdown-item" onClick={() => navigate('/profile')}>
                                     Мой профиль
                                 </button>
-                                {(currentUser.role === 'teacher' || currentUser.role === 'admin' || currentUser.is_staff) && (
-                                    <button className="sl-header__dropdown-item" onClick={() => navigate('/admin-panel')}>
+                                {TEACHER_APP_URL && (currentUser.role === 'teacher' || currentUser.role === 'admin' || currentUser.is_staff) && (
+                                    <a className="sl-header__dropdown-item" href={TEACHER_APP_URL}>
                                         Панель учителя
-                                    </button>
+                                    </a>
                                 )}
                                 <button className="sl-header__dropdown-item sl-header__dropdown-item--danger" onClick={() => {
                                     localStorage.removeItem('currentUser');
@@ -178,9 +179,9 @@ const Header: React.FC = () => {
                     <div className="sl-header__auth">
                         <Link to="/login" className="sl-header__auth-login">Войти</Link>
                         <Link to="/login" className="sl-header__auth-register">Войти как студент</Link>
-                        <Link to="/teacher-login" className="sl-header__auth-login" style={{ border: '1px solid var(--primary)', color: 'var(--primary)', background: 'transparent', fontWeight: 600 }}>
+                        {TEACHER_APP_URL && <a href={TEACHER_APP_URL} className="sl-header__auth-login" style={{ border: '1px solid var(--primary)', color: 'var(--primary)', background: 'transparent', fontWeight: 600 }}>
                             Преподавателям
-                        </Link>
+                        </a>}
                     </div>
                 )}
             </div>

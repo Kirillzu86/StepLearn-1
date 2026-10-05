@@ -1,5 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent, type SVGProps, type FC } from "react";
 import { API_URL } from "../../api/api";
+import { TEACHER_APP_URL } from "../../api/appUrls";
 import { useNavigate, Link } from "react-router-dom";
 import Header from "../Header/Header";
 import Sidebar from "../Sidebar/sidebar";
@@ -288,9 +289,9 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
                                 <div className="sl-auth-footer">
                                     <span>Учетную запись создаёт преподаватель.</span>
                                 </div>
-                                <div className="sl-auth-footer" style={{ marginTop: '8px' }}>
-                                    <Link to="/teacher-login" className="sl-auth-link sl-auth-link--secondary">Вход для преподавателей →</Link>
-                                </div>
+                                {TEACHER_APP_URL && <div className="sl-auth-footer" style={{ marginTop: '8px' }}>
+                                    <a href={TEACHER_APP_URL} className="sl-auth-link sl-auth-link--secondary">Вход для преподавателей →</a>
+                                </div>}
                             </>
                         )}
                     </div>

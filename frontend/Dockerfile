@@ -5,6 +5,8 @@ WORKDIR /app
 # Переменная окружения для API бэкенда (Coolify передает ее через Build Arguments)
 ARG VITE_API_URL
 ENV VITE_API_URL=$VITE_API_URL
+ARG VITE_TEACHER_APP_URL
+ENV VITE_TEACHER_APP_URL=$VITE_TEACHER_APP_URL
 
 COPY package*.json ./
 COPY tsconfig*.json ./

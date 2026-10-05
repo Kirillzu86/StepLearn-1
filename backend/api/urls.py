@@ -4,6 +4,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('health/', views.health_check, name='health-check'),
     # Auth & Users
     path('users', views.users, name='users'),
     path('users/', views.users, name='users-slash'),
@@ -43,6 +44,8 @@ urlpatterns = [
     path('v1/courses/<int:course_id>/complete/', views.complete_text_course, name='course-complete-slash'),
     path('v1/courses/<int:course_id>/blocks', views.course_blocks, name='course-blocks'),
     path('v1/courses/<int:course_id>/blocks/', views.course_blocks, name='course-blocks-slash'),
+    path('v1/blocks/<int:block_id>', views.block_detail, name='block-detail'),
+    path('v1/blocks/<int:block_id>/', views.block_detail, name='block-detail-slash'),
     path('v1/courses/<int:course_id>/import-markdown', views.course_import_markdown, name='course-import-markdown'),
     path('v1/courses/<int:course_id>/import-markdown/', views.course_import_markdown, name='course-import-markdown-slash'),
 
@@ -55,6 +58,8 @@ urlpatterns = [
     path('v1/assignments/<int:assignment_id>/', views.assignment_detail, name='assignment-detail-slash'),
     path('v1/assignments/<int:assignment_id>/submissions', views.assignment_submissions, name='assignment-submissions'),
     path('v1/assignments/<int:assignment_id>/submissions/', views.assignment_submissions, name='assignment-submissions-slash'),
+    path('v1/submissions/<int:submission_id>/run', views.run_submission, name='submission-run'),
+    path('v1/submissions/<int:submission_id>/run/', views.run_submission, name='submission-run-slash'),
     path('v1/submissions/<int:submission_id>/file', views.assignment_submission_file, name='assignment-submission-file'),
     path('v1/submissions/<int:submission_id>/file/', views.assignment_submission_file, name='assignment-submission-file-slash'),
     path('v1/submissions/<int:submission_id>/grade', views.grade_assignment_submission, name='grade-assignment-submission'),
@@ -105,4 +110,6 @@ urlpatterns = [
     path('v1/teacher/students/<int:student_id>/reset-progress/', views.reset_student_progress, name='reset-student-progress-slash'),
     path('v1/teacher/students/<int:student_id>/toggle-status', views.toggle_student_status, name='toggle-student-status'),
     path('v1/teacher/students/<int:student_id>/toggle-status/', views.toggle_student_status, name='toggle-student-status-slash'),
+    path('v1/teacher/students/<int:student_id>/archive', views.set_student_archived, name='set-student-archived'),
+    path('v1/teacher/students/<int:student_id>/archive/', views.set_student_archived, name='set-student-archived-slash'),
 ]

@@ -1,9 +1,9 @@
 import { useState, type ChangeEvent, type FormEvent, type SVGProps, type FC } from "react";
+import axios from "axios";
 import { teacherLogin } from "../../api/api";
 import { useNavigate, Link } from "react-router-dom";
-import Header from "../Header/Header";
-import "../HomePage/StyleHomePage.css";
-import "../LogPage/StyleLogPage.css";
+import "../../styles/StyleHomePage.css";
+import "../../styles/StyleLogPage.css";
 import "./StyleTeacherAuth.css";
 
 type IconProps = SVGProps<SVGSVGElement>;
@@ -52,12 +52,7 @@ const Icons = {
     )
 };
 
-interface TeacherLoginProps {
-    theme: "dark" | "light";
-    toggleTheme: () => void;
-}
-
-function TeacherLogin({ }: TeacherLoginProps) {
+function TeacherLogin() {
     const [formData, setFormData] = useState({ login: '', password: '' });
     const [message, setMessage] = useState({ text: '', type: '' });
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
@@ -87,8 +82,15 @@ function TeacherLogin({ }: TeacherLoginProps) {
                 window.dispatchEvent(new Event('currentUserChanged'));
             }
             navigate('/admin-panel');
-        } catch (err: any) {
-            const errorMsg = err.response?.data?.detail || err.response?.data?.non_field_errors?.[0] || err.message || "Ошибка при входе";
+        } catch (err: unknown) {
+            const data = axios.isAxiosError(err) ? err.response?.data : null;
+            const errorMsg = typeof data?.detail === "string"
+                ? data.detail
+                : Array.isArray(data?.non_field_errors) && typeof data.non_field_errors[0] === "string"
+                    ? data.non_field_errors[0]
+                    : err instanceof Error
+                        ? err.message
+                        : "Ошибка при входе";
             setMessage({ text: errorMsg, type: "error" });
         } finally {
             setSubmitting(false);
@@ -121,7 +123,9 @@ function TeacherLogin({ }: TeacherLoginProps) {
 
     return (
         <div className="sl-app">
-            <Header />
+            <header className="teacher-site-header">
+                <Link to="/login" className="teacher-site-brand">StepLearn <span>TEACHER</span></Link>
+            </header>
             <div className="sl-teacher-auth-layout">
                 <main className="sl-auth-main sl-teacher-auth-main">
                     <div className="sl-auth-card sl-teacher-auth-card">
@@ -152,8 +156,7 @@ function TeacherLogin({ }: TeacherLoginProps) {
                         </form>
 
                         <div className="sl-auth-footer">
-                            <span>Нет преподавательского аккаунта? </span>
-                            <Link to="/teacher-register" className="sl-auth-link">Зарегистрироваться</Link>
+                            <span>Учётную запись преподавателя создаёт администратор.</span>
                         </div>
                         <div className="sl-auth-footer" style={{ marginTop: '8px' }}>
                             <Link to="/login" className="sl-auth-link sl-auth-link--secondary">← Вход для студентов</Link>

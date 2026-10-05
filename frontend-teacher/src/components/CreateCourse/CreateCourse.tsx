@@ -1,12 +1,9 @@
 import React, { useState, useRef } from "react";
 import axios from "axios";
-import { API_URL, createCourse, saveCustomCourse } from "../../api/api";
+import { API_URL, createCourse } from "../../api/api";
 import { useNavigate } from "react-router-dom";
 import { marked } from "marked";
-import Header from "../Header/Header";
-import Sidebar from "../Sidebar/sidebar";
-import "../HomePage/StyleHomePage.css";
-import "../Sidebar/StyleSidebar.css";
+import "../../styles/StyleHomePage.css";
 import "./CreateCourse.css";
 
 interface CreateCourseProps {
@@ -204,14 +201,10 @@ function CreateCourse({ theme, toggleTheme }: CreateCourseProps) {
         return resp.data;
       });
 
-      if (created) {
-        saveCustomCourse(created);
-      }
-
       if (created && created.id) {
-        navigate(`/course/${created.id}`);
+        navigate("/admin-panel");
       } else {
-        navigate("/catalog");
+        throw new Error("Backend did not return the created course.");
       }
     } catch (err: any) {
       console.error("Не удалось создать курс:", err);
@@ -275,9 +268,13 @@ function CreateCourse({ theme, toggleTheme }: CreateCourseProps) {
 
   return (
     <div className="sl-app">
-      <Header />
+      <header className="teacher-site-header">
+        <button className="btn-secondary" type="button" onClick={() => navigate("/admin-panel")}>
+          ← Панель преподавателя
+        </button>
+        <span className="teacher-site-brand">Создание курса</span>
+      </header>
       <div className="sl-layout">
-        <Sidebar />
         <main className="sl-main">
             <div className="content-header">
               <h1 className="main-title">Создать курс</h1>

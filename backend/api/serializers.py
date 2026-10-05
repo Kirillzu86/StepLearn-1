@@ -88,7 +88,7 @@ class LoginSerializer(serializers.Serializer):
         login = attrs['login'].strip()
         password = attrs['password']
         user = User.objects.filter(email__iexact=login).first() or User.objects.filter(username__iexact=login).first()
-        if not user or not user.check_password(password) or not user.is_active:
+        if not user or not user.check_password(password) or not user.is_active or user.is_archived:
             raise serializers.ValidationError('Неверный логин или пароль')
         attrs['user'] = user
         return attrs
@@ -456,7 +456,7 @@ class AssignmentCreateSerializer(serializers.ModelSerializer):
         max_length=20,
     )
     time_limit_seconds = serializers.IntegerField(min_value=1, max_value=30, default=5)
-    memory_limit_mb = serializers.IntegerField(min_value=16, max_value=512, default=128)
+    memory_limit_mb = serializers.IntegerField(min_value=64, max_value=512, default=128)
     test_cases = AssignmentTestCaseInputSerializer(
         many=True,
         required=False,
@@ -497,6 +497,24 @@ class AssignmentCreateSerializer(serializers.ModelSerializer):
             'assignment_type',
             self.instance.assignment_type if self.instance else Assignment.TYPE_TEXT,
         )
+        if (
+            self.instance
+            and self.instance.assignment_type == Assignment.TYPE_CODE
+            and self.instance.submissions.exists()
+            and {
+                'points',
+                'programming_language',
+                'time_limit_seconds',
+                'memory_limit_mb',
+                'test_cases',
+            }.intersection(self.initial_data)
+        ):
+            raise serializers.ValidationError({
+                'test_cases': (
+                    'Настройки и тесты Code Assignment нельзя изменять после первой '
+                    'отправки решения: это сохраняет корректность текущих и будущих проверок.'
+                )
+            })
         questions = attrs.get(
             'questions',
             None if self.instance else [],
@@ -522,6 +540,23 @@ class AssignmentCreateSerializer(serializers.ModelSerializer):
             )
             test_case_serializer.is_valid(raise_exception=True)
             attrs['test_cases'] = test_case_serializer.validated_data
+        is_published = attrs.get(
+            'is_published',
+            self.instance.is_published if self.instance else False,
+        )
+        has_test_cases = (
+            bool(attrs['test_cases'])
+            if 'test_cases' in attrs
+            else bool(self.instance and self.instance.test_cases.exists())
+        )
+        if (
+            assignment_type == Assignment.TYPE_CODE
+            and is_published
+            and not has_test_cases
+        ):
+            raise serializers.ValidationError({
+                'test_cases': 'Для публикации Code Assignment добавьте хотя бы один hidden test.'
+            })
         code_fields = {
             'programming_language',
             'starter_code',
@@ -611,8 +646,10 @@ class AssignmentSubmissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssignmentSubmission
         fields = [
-            'id', 'assignment_id', 'student_id', 'answer_text', 'response_data', 'status',
-            'score', 'feedback', 'has_file', 'original_file_name', 'submitted_at', 'graded_at',
+            'id', 'assignment_id', 'student_id', 'answer_text', 'source_code',
+            'language', 'response_data', 'status', 'score', 'tests_passed', 'tests_total',
+            'execution_time_ms', 'memory_used_mb', 'error_message', 'feedback',
+            'has_file', 'original_file_name', 'submitted_at', 'graded_at', 'finished_at',
         ]
         read_only_fields = fields
 

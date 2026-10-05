@@ -1,4 +1,5 @@
 // StepLearn Teacher Panel (Панель преподавателя)
+import axios from "axios";
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -10,30 +11,25 @@ import {
   FiTrash2,
   FiCopy,
   FiBookOpen,
-  FiArrowLeft,
   FiUserPlus,
   FiRefreshCw,
   FiActivity,
   FiAward,
   FiKey,
-  FiFileText,
   FiUploadCloud,
-  FiCheck,
-  FiAlertCircle,
   FiEye,
+  FiFileText,
+  FiArchive,
 } from "react-icons/fi";
 import {
   fetchGroups,
   createGroup,
-  deleteGroup,
   addStudentToGroup,
   removeStudentFromGroup,
   assignCourseToGroup,
   fetchGroupProgressMatrix,
   toggleGroupLessonAccess,
-  fetchCourses,
-  createCourseLesson,
-  deleteLesson,
+  fetchTeacherCourses,
   fetchTeacherDashboard,
   fetchTeacherStudents,
   quickCreateStudent,
@@ -41,16 +37,17 @@ import {
   resetStudentPassword,
   resetStudentProgress,
   toggleStudentStatus,
-  createCourseBlock,
+  setStudentArchived,
+  updateTeacherStudent,
   importCourseMarkdown,
   createCourse,
   updateCourse,
-  saveCustomCourse,
 } from "../../api/api";
-import Header from "../Header/Header";
-import Sidebar from "../Sidebar/sidebar";
-import "../HomePage/StyleHomePage.css";
-import "../Sidebar/StyleSidebar.css";
+import type { TeacherDashboardSummary } from "../../api/api";
+import TeacherSubmissionsPanel from "./TeacherSubmissionsPanel";
+import TeacherAssignmentsPanel from "./TeacherAssignmentsPanel";
+import TeacherCourseContentPanel from "./TeacherCourseContentPanel";
+import "../../styles/StyleHomePage.css";
 import "./StyleAdminPanel.css";
 
 interface AdminPanelProps {
@@ -58,22 +55,61 @@ interface AdminPanelProps {
   toggleTheme: () => void;
 }
 
+function getStudentActionError(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const responseStatus = error.response?.status;
+    if (responseStatus === 401) return "Сессия истекла. Войдите в систему повторно.";
+    if (responseStatus === 403) {
+      const detail = error.response?.data?.detail;
+      return typeof detail === "string"
+        ? `Недостаточно прав: ${detail}`
+        : "Недостаточно прав для этого действия.";
+    }
+    if (responseStatus === 409) {
+      const detail = error.response?.data?.detail;
+      return typeof detail === "string" ? detail : "Действие невозможно в текущем состоянии ученика.";
+    }
+    const detail = error.response?.data?.detail;
+    if (typeof detail === "string") return detail;
+    if (!error.response) return "Сервер недоступен. Проверьте соединение и повторите попытку.";
+  }
+  return fallback;
+}
+
 export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
   const navigate = useNavigate();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
-  // 3 основные вкладки для преподавателя
-  const [activeTab, setActiveTab] = useState<"students" | "courses" | "groups">("students");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "students" | "submissions" | "courses" | "groups">("dashboard");
 
   // Студенты и Мониторинг
   const [students, setStudents] = useState<any[]>([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [studentsError, setStudentsError] = useState<string | null>(null);
+  const [studentActionMessage, setStudentActionMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [dataLoadError, setDataLoadError] = useState<string | null>(null);
+  const [workflowMessage, setWorkflowMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showArchivedStudents, setShowArchivedStudents] = useState(false);
   const [selectedStudentDetail, setSelectedStudentDetail] = useState<any>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [editingStudent, setEditingStudent] = useState(false);
+  const [studentEditForm, setStudentEditForm] = useState({
+    first_name: "",
+    last_name: "",
+    email: "",
+  });
+  const [studentEditError, setStudentEditError] = useState<string | null>(null);
+  const [studentEditLoading, setStudentEditLoading] = useState(false);
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const [quickCreateFirstName, setQuickCreateFirstName] = useState("");
+  const [quickCreateLastName, setQuickCreateLastName] = useState("");
+  const [quickCreateGroupId, setQuickCreateGroupId] = useState<number | "">("");
+  const [quickCreateLoading, setQuickCreateLoading] = useState(false);
+  const [dashboard, setDashboard] = useState<TeacherDashboardSummary | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   // Пароли и алерты
   const [newPasswordAlert, setNewPasswordAlert] = useState<{ username: string; pass: string } | null>(null);
@@ -101,9 +137,6 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
 
   // Редактор курсов и Markdown импорт
   const [selectedCourseForEdit, setSelectedCourseForEdit] = useState<number | null>(null);
-  const [showAddBlockModal, setShowAddBlockModal] = useState(false);
-  const [newBlockTitle, setNewBlockTitle] = useState("");
-  const [newBlockDesc, setNewBlockDesc] = useState("");
 
   const [showMarkdownImportModal, setShowMarkdownImportModal] = useState(false);
   const [importLessonTitle, setImportLessonTitle] = useState("");
@@ -125,6 +158,10 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
   const [selectedStudentToAssign, setSelectedStudentToAssign] = useState<number | "">("");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
+  const showWorkflowError = (error: unknown, fallback: string) => {
+    setWorkflowMessage({ kind: "error", text: getStudentActionError(error, fallback) });
+  };
+
   useEffect(() => {
     const raw = localStorage.getItem("currentUser");
     if (!raw) {
@@ -145,7 +182,7 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
     try {
       const [groupsData, coursesData] = await Promise.all([
         fetchGroups(userId),
-        fetchCourses(),
+        fetchTeacherCourses(),
       ]);
       const loadedGroups = Array.isArray(groupsData) ? groupsData : [];
       const loadedCourses = Array.isArray(coursesData) ? coursesData : [];
@@ -163,27 +200,90 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
       }
 
       setDataLoadError(null);
-      loadStudents();
+      void loadStudents();
+      void loadDashboard();
     } catch (e) {
       console.error("Ошибка инициализации панели:", e);
-      setDataLoadError("Не удалось загрузить группы и курсы. Проверьте подключение и права доступа.");
+      setDataLoadError(getStudentActionError(e, "Не удалось загрузить группы и курсы."));
     } finally {
       setLoading(false);
     }
   };
 
-  const loadStudents = async () => {
+  const loadStudents = async (includeArchived = showArchivedStudents): Promise<boolean> => {
     setStudentsLoading(true);
     try {
-      const data = await fetchTeacherStudents({ q: searchQuery });
+      const data = await fetchTeacherStudents({
+        q: searchQuery,
+        ...(includeArchived ? { include_archived: true } : {}),
+      });
       setStudents(Array.isArray(data) ? data : []);
       setStudentsError(null);
+      return true;
     } catch (e) {
       console.error("Ошибка загрузки студентов:", e);
       setStudents([]);
-      setStudentsError("Не удалось загрузить список учеников.");
+      setStudentsError(getStudentActionError(e, "Не удалось загрузить список учеников."));
+      return false;
     } finally {
       setStudentsLoading(false);
+    }
+  };
+
+  const loadDashboard = async () => {
+    setDashboardLoading(true);
+    try {
+      setDashboard(await fetchTeacherDashboard());
+      setDashboardError(null);
+    } catch (e) {
+      console.error("Не удалось загрузить сводку преподавателя", e);
+      setDashboardError(getStudentActionError(e, "Не удалось загрузить статистику."));
+    } finally {
+      setDashboardLoading(false);
+    }
+  };
+
+  const handleQuickCreateStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStudentActionMessage(null);
+    setQuickCreateLoading(true);
+    try {
+      const created = await quickCreateStudent({
+        first_name: quickCreateFirstName.trim(),
+        last_name: quickCreateLastName.trim(),
+        ...(quickCreateGroupId ? { group_id: Number(quickCreateGroupId) } : {}),
+      });
+      const createdStudent = {
+        ...created.user,
+        username: created.username,
+        group_id: created.group_id,
+        group_name: created.group_name,
+        progress_percent: 0,
+        completed_lessons: 0,
+      };
+      setStudents((previous) => [createdStudent, ...previous]);
+      if (created.group_id) {
+        setGroups((previous) => previous.map((group) => group.id === created.group_id
+          ? {
+            ...group,
+            students: [...(group.students || []), created.user],
+            students_count: (group.students_count || 0) + 1,
+          }
+          : group));
+      }
+      setNewPasswordAlert({ username: created.username, pass: created.password });
+      setQuickCreateFirstName("");
+      setQuickCreateLastName("");
+      setQuickCreateGroupId("");
+      setQuickCreateOpen(false);
+    } catch (e) {
+      console.error("Не удалось создать ученика", e);
+      setStudentActionMessage({
+        kind: "error",
+        text: getStudentActionError(e, "Не удалось создать ученика. Проверьте введённые данные."),
+      });
+    } finally {
+      setQuickCreateLoading(false);
     }
   };
 
@@ -205,7 +305,7 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
     } catch (e) {
       console.error("Не удалось загрузить матрицу группы", e);
       setMatrixData(null);
-      setMatrixError("Не удалось загрузить матрицу. Проверьте, назначен ли этот курс группе.");
+      setMatrixError(getStudentActionError(e, "Не удалось загрузить матрицу. Проверьте, назначен ли этот курс группе."));
     } finally {
       setMatrixLoading(false);
     }
@@ -213,23 +313,26 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
 
   const handleToggleAccess = async (lessonId: number, currentUnlocked: boolean) => {
     if (!selectedGroupId) return;
+    setWorkflowMessage(null);
     try {
       await toggleGroupLessonAccess(selectedGroupId, lessonId, {
         is_unlocked: !currentUnlocked,
       });
-      if (selectedCourseId) loadMatrix(selectedGroupId, selectedCourseId);
+      if (selectedCourseId) await loadMatrix(selectedGroupId, selectedCourseId);
+      setWorkflowMessage({ kind: "success", text: "Доступ к уроку обновлён." });
     } catch (e) {
       console.error("Не удалось изменить доступ к модулю", e);
-      alert("Не удалось изменить доступ к модулю.");
+      showWorkflowError(e, "Не удалось изменить доступ к уроку.");
     }
   };
 
   const handleAssignCourseToGroup = async (groupId: number) => {
     const courseId = groupCourseSelections[groupId];
     if (!courseId) {
-      alert("Выберите курс для назначения группе.");
+      setWorkflowMessage({ kind: "error", text: "Выберите курс для назначения группе." });
       return;
     }
+    setWorkflowMessage(null);
     try {
       await assignCourseToGroup(groupId, courseId);
       const course = courses.find((item) => item.id === courseId);
@@ -241,73 +344,126 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
         )
       );
       setGroupCourseSelections((previous) => ({ ...previous, [groupId]: "" }));
+      setWorkflowMessage({ kind: "success", text: "Курс назначен группе." });
     } catch (e) {
       console.error("Не удалось назначить курс группе", e);
-      alert("Не удалось назначить курс группе.");
+      showWorkflowError(e, "Не удалось назначить курс группе.");
     }
   };
 
   const handleCourseStatusChange = async (courseId: number, status: "draft" | "published" | "archived") => {
+    setWorkflowMessage(null);
     try {
       const updated = await updateCourse(courseId, { status });
       setCourses((previous) =>
         previous.map((course) => course.id === courseId ? { ...course, ...updated } : course)
       );
+      setWorkflowMessage({ kind: "success", text: "Статус курса обновлён." });
     } catch (e) {
       console.error("Не удалось изменить статус курса", e);
-      alert("Не удалось изменить статус курса. Убедитесь, что вы автор курса.");
+      showWorkflowError(e, "Не удалось изменить статус курса.");
     }
   };
 
   // Действия над студентами
   const handleResetPassword = async (studentId: number) => {
     if (!window.confirm("Сгенерировать новый пароль для студента?")) return;
+    setStudentActionMessage(null);
     try {
-      const res = await resetStudentPassword(studentId).catch(() => ({ username: "student", new_password: "Pass" + Math.floor(Math.random() * 8999 + 1000) }));
+      const res = await resetStudentPassword(studentId);
       setNewPasswordAlert({ username: res.username || "Студент", pass: res.new_password });
     } catch (e) {
-      alert("Ошибка при сбросе пароля");
+      setStudentActionMessage({ kind: "error", text: getStudentActionError(e, "Не удалось сбросить пароль.") });
     }
   };
 
   const handleResetProgress = async (studentId: number) => {
     if (!window.confirm("Сбросить весь прогресс обучения студента?")) return;
+    setStudentActionMessage(null);
     try {
-      await resetStudentProgress(studentId).catch(() => {});
-      alert("Прогресс студента сброшен");
-      loadStudents();
+      await resetStudentProgress(studentId);
+      if (await loadStudents()) {
+        setStudentActionMessage({ kind: "success", text: "Прогресс ученика сброшен." });
+      }
     } catch (e) {
-      alert("Ошибка сброса прогресса");
+      setStudentActionMessage({ kind: "error", text: getStudentActionError(e, "Не удалось сбросить прогресс.") });
     }
   };
 
   const handleToggleStudentStatus = async (studentId: number) => {
+    setStudentActionMessage(null);
     try {
-      const res = await toggleStudentStatus(studentId).catch(() => ({ status_text: "Изменен" }));
-      alert(`Статус студента: ${res.status_text}`);
+      const res = await toggleStudentStatus(studentId);
+      setStudentActionMessage({ kind: "success", text: `Статус ученика: ${res.status_text}.` });
       setStudents((prev) =>
-        prev.map((s) => (s.id === studentId ? { ...s, is_active: !s.is_active } : s))
+        prev.map((s) => (s.id === studentId ? { ...s, is_active: res.is_active } : s))
       );
     } catch (e) {
-      alert("Не удалось изменить статус студента");
+      setStudentActionMessage({ kind: "error", text: getStudentActionError(e, "Не удалось изменить статус ученика.") });
+    }
+  };
+
+  const handleSetStudentArchived = async (studentId: number, isArchived: boolean) => {
+    const message = isArchived
+      ? "Переместить ученика в архив? Данные и прогресс сохранятся, но вход в аккаунт будет заблокирован."
+      : "Восстановить ученика из архива? Доступ к аккаунту вернётся с прежним статусом блокировки.";
+    if (!window.confirm(message)) return;
+    setStudentActionMessage(null);
+    try {
+      await setStudentArchived(studentId, isArchived);
+      if (await loadStudents()) {
+        setStudentActionMessage({
+          kind: "success",
+          text: isArchived ? "Ученик архивирован. Его учебные данные сохранены." : "Ученик восстановлен из архива.",
+        });
+      }
+    } catch (error) {
+      console.error("Не удалось изменить состояние архива ученика", error);
+      setStudentActionMessage({
+        kind: "error",
+        text: getStudentActionError(error, "Не удалось изменить состояние архива ученика."),
+      });
     }
   };
 
   const handleViewStudentDetail = async (studentId: number) => {
+    setStudentActionMessage(null);
     try {
-      const data = await fetchTeacherStudentDetail(studentId).catch(() => null);
-      const st = students.find((s) => s.id === studentId);
-      setSelectedStudentDetail(data || {
-        first_name: st?.first_name || "Студент",
-        last_name: st?.last_name || "",
-        email: st?.email || "student@steplearn.ru",
-        group_name: st?.group_name || "Не указана",
-        progress_percent: st?.progress_percent || 0,
-        completed_lessons_count: st?.completed_lessons || 0,
+      const data = await fetchTeacherStudentDetail(studentId);
+      setSelectedStudentDetail(data);
+      setStudentEditForm({
+        first_name: data.first_name || "",
+        last_name: data.last_name || "",
+        email: data.email || "",
       });
+      setEditingStudent(false);
+      setStudentEditError(null);
       setDetailModalOpen(true);
     } catch (e) {
-      alert("Ошибка загрузки профиля");
+      setStudentActionMessage({ kind: "error", text: getStudentActionError(e, "Не удалось загрузить профиль ученика.") });
+    }
+  };
+
+  const handleUpdateStudent = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedStudentDetail) return;
+
+    setStudentEditLoading(true);
+    setStudentEditError(null);
+    try {
+      const updated = await updateTeacherStudent(selectedStudentDetail.id, studentEditForm);
+      setSelectedStudentDetail((previous: any) => ({ ...previous, ...updated }));
+      setStudents((previous) => previous.map((student) => (
+        student.id === updated.id
+          ? { ...student, ...updated, name: `${updated.first_name} ${updated.last_name}`.trim() }
+          : student
+      )));
+      setEditingStudent(false);
+    } catch (error) {
+      console.error("Не удалось обновить профиль ученика:", error);
+      setStudentEditError(getStudentActionError(error, "Не удалось сохранить профиль. Проверьте введённые данные."));
+    } finally {
+      setStudentEditLoading(false);
     }
   };
 
@@ -315,7 +471,7 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
   const handleAddExistingStudentToGroup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedGroupForStudentAdd || !selectedStudentToAssign) {
-      alert("Выберите группу и существующего ученика");
+      setWorkflowMessage({ kind: "error", text: "Выберите группу и существующего ученика." });
       return;
     }
     const groupId = Number(selectedGroupForStudentAdd);
@@ -324,6 +480,7 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
     const targetGroup = groups.find((g) => g.id === groupId);
 
     try {
+      setWorkflowMessage(null);
       const updatedGroup = await addStudentToGroup(groupId, { student_id: studentId });
 
       setGroups((prevGroups) =>
@@ -343,10 +500,13 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
         })
       );
 
-      alert(`🎉 Ученик ${studentObj ? `${studentObj.first_name} ${studentObj.last_name}` : ""} успешно добавлен в группу «${targetGroup?.name}»!`);
+      setWorkflowMessage({
+        kind: "success",
+        text: `Ученик ${studentObj ? `${studentObj.first_name} ${studentObj.last_name}` : ""} добавлен в группу «${targetGroup?.name}».`,
+      });
       setSelectedStudentToAssign("");
     } catch (err) {
-      alert("Не удалось добавить ученика в группу");
+      showWorkflowError(err, "Не удалось добавить ученика в группу.");
     }
   };
 
@@ -354,7 +514,8 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
   const handleRemoveStudentFromGroup = async (groupId: number, studentId: number) => {
     if (!window.confirm("Удалить этого ученика из группы?")) return;
     try {
-      await removeStudentFromGroup(groupId, studentId).catch(() => null);
+      setWorkflowMessage(null);
+      await removeStudentFromGroup(groupId, studentId);
       setGroups((prevGroups) =>
         prevGroups.map((g) => {
           if (g.id === groupId) {
@@ -368,8 +529,9 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
           return g;
         })
       );
+      setWorkflowMessage({ kind: "success", text: "Ученик удалён из группы." });
     } catch (e) {
-      alert("Не удалось удалить ученика из группы");
+      showWorkflowError(e, "Не удалось удалить ученика из группы.");
     }
   };
 
@@ -381,10 +543,11 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
       newGroupStudents.length !== newGroupCapacity ||
       newGroupStudents.some((student) => !student.first_name.trim() || !student.last_name.trim())
     ) {
-      alert("Заполните имя и фамилию каждого ученика в группе");
+      setWorkflowMessage({ kind: "error", text: "Заполните имя и фамилию каждого ученика в группе." });
       return;
     }
     try {
+      setWorkflowMessage(null);
       const g = await createGroup({
         name: newGroupName.trim(),
         description: newGroupDesc.trim(),
@@ -412,28 +575,10 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
       setNewGroupDesc("");
       setNewGroupCapacity(6);
       setNewGroupStudents(Array.from({ length: 6 }, () => ({ first_name: "", last_name: "" })));
+      setWorkflowMessage({ kind: "success", text: "Группа и учётные записи учеников созданы." });
     } catch (e) {
       console.error("Не удалось создать группу и учётные записи учеников", e);
-      alert("Не удалось создать группу. Проверьте данные и попробуйте ещё раз.");
-    }
-  };
-
-  // Создание блока курса
-  const handleCreateBlock = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedCourseForEdit || !newBlockTitle.trim()) return;
-    try {
-      await createCourseBlock(selectedCourseForEdit, {
-        title: newBlockTitle.trim(),
-        description: newBlockDesc.trim(),
-      }).catch(() => null);
-
-      setShowAddBlockModal(false);
-      setNewBlockTitle("");
-      setNewBlockDesc("");
-      alert("Блок/модуль курса создан!");
-    } catch (e) {
-      alert("Ошибка создания блока");
+      showWorkflowError(e, "Не удалось создать группу.");
     }
   };
 
@@ -441,39 +586,28 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
   const handleCreateCourse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCourseTitle.trim()) {
-      alert("Укажите название курса");
+      setWorkflowMessage({ kind: "error", text: "Укажите название курса." });
       return;
     }
     try {
+      setWorkflowMessage(null);
       const created = await createCourse({
         title: newCourseTitle.trim(),
         description: newCourseDesc.trim(),
         category: newCourseCategory,
         level: newCourseLevel,
         price: Number(newCoursePrice) || 0,
-      }).catch(() => {
-        // Fallback demo course if backend offline
-        return {
-          id: Date.now(),
-          title: newCourseTitle.trim(),
-          description: newCourseDesc.trim(),
-          category: newCourseCategory,
-          level: newCourseLevel,
-          price: Number(newCoursePrice) || 0,
-          lessons: []
-        };
       });
 
-      saveCustomCourse(created);
       setCourses((prev) => [created, ...prev]);
       setSelectedCourseForEdit(created.id);
       setShowCreateCourseModal(false);
       setNewCourseTitle("");
       setNewCourseDesc("");
       setNewCoursePrice(0);
-      alert(`Курс "${created.title}" успешно создан! Теперь вы можете добавить в него модули и уроки.`);
+      setWorkflowMessage({ kind: "success", text: `Курс «${created.title}» создан. Теперь добавьте разделы, уроки и задания.` });
     } catch (e) {
-      alert("Ошибка при создании курса");
+      showWorkflowError(e, "Не удалось создать курс.");
     }
   };
 
@@ -514,26 +648,20 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
     e.preventDefault();
     const targetCourseId = selectedCourseForEdit || (courses.length > 0 ? courses[0].id : null);
     if (!targetCourseId) {
-      alert("Сначала создайте курс для добавления в него урока!");
+      setWorkflowMessage({ kind: "error", text: "Сначала создайте курс, затем импортируйте урок." });
       return;
     }
     if (!importLessonContent.trim()) {
-      alert("Выберите файл .md или вставьте текст в формате Markdown");
+      setWorkflowMessage({ kind: "error", text: "Выберите файл .md или вставьте текст в формате Markdown." });
       return;
     }
     try {
-      const res = await importCourseMarkdown(targetCourseId, {
+      setWorkflowMessage(null);
+      const newLesson = await importCourseMarkdown(targetCourseId, {
         title: importLessonTitle.trim() || undefined,
         content: importLessonContent.trim(),
         block_id: importBlockId ? Number(importBlockId) : undefined,
-      }).catch(() => null);
-
-      const newLesson = res || {
-        id: Date.now(),
-        title: importLessonTitle.trim() || "Урок из Markdown",
-        order: (courses.find((c) => c.id === targetCourseId)?.lessons?.length || 0) + 1,
-        content: importLessonContent.trim(),
-      };
+      });
 
       setCourses((prevCourses) =>
         prevCourses.map((c) => {
@@ -553,24 +681,39 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
       setImportLessonContent("");
       setImportBlockId("");
       setUploadedFileName(null);
-      alert("Урок из Markdown (.md) успешно импортирован в курс!");
+      setWorkflowMessage({ kind: "success", text: "Урок из Markdown импортирован в курс." });
     } catch (e) {
-      alert("Ошибка при импорте Markdown");
+      showWorkflowError(e, "Не удалось импортировать урок из Markdown.");
     }
   };
 
   return (
     <div className="sl-app">
-      <Header />
+      <header className="teacher-site-header">
+        <Link to="/admin-panel" className="teacher-site-brand">StepLearn <span>TEACHER</span></Link>
+        <div className="teacher-site-header__actions">
+          <span>{currentUser?.first_name ? `${currentUser.first_name} ${currentUser.last_name || ""}` : currentUser?.username}</span>
+          <button className="btn-secondary" onClick={toggleTheme}>
+            {theme === "dark" ? "Светлая тема" : "Тёмная тема"}
+          </button>
+          <button
+            className="btn-secondary"
+            onClick={() => {
+              localStorage.removeItem("currentUser");
+              window.dispatchEvent(new Event("currentUserChanged"));
+              navigate("/login");
+            }}
+          >
+            Выйти
+          </button>
+        </div>
+      </header>
       <div className="sl-layout sl-layout--full">
         <main className="sl-main" style={{ marginLeft: 0, padding: "24px 32px", width: "100%", maxWidth: "1400px", margin: "0 auto" }}>
           <div className="admin-container">
             {/* ТИТУЛЬНЫЙ ЗАГОЛОВОК ПРЕПОДАВАТЕЛЯ */}
             <div className="admin-header-bar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border-light)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <Link to="/" className="btn-secondary" style={{ textDecoration: "none" }}>
-                  <FiArrowLeft /> На главную
-                </Link>
                 <h1 style={{ fontSize: "1.5rem", margin: 0, fontWeight: 800 }}>Панель преподавателя StepLearn</h1>
                 <span style={{ background: "linear-gradient(135deg, #1E1B4B 0%, #312E81 100%)", color: "#fff", padding: "4px 12px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 700, textTransform: "uppercase" }}>
                   Преподаватель
@@ -581,15 +724,38 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
               </div>
             </div>
 
-            {dataLoadError && <div className="error-state">{dataLoadError}</div>}
+            {loading && <div role="status">Загружаем группы и курсы...</div>}
+            {dataLoadError && (
+              <div className="error-state" role="alert">
+                {dataLoadError}{" "}
+                <button
+                  className="btn-secondary"
+                  onClick={() => currentUser && loadInitialData(currentUser.id)}
+                >
+                  Повторить
+                </button>
+              </div>
+            )}
 
-            {/* 3 ОСНОВНЫЕ ВКЛАДКИ ДЛЯ ПРЕПОДАВАТЕЛЯ */}
+            {/* Основные разделы кабинета преподавателя */}
             <nav className="admin-nav-tabs">
+              <button
+                className={`admin-tab-btn ${activeTab === "dashboard" ? "active" : ""}`}
+                onClick={() => setActiveTab("dashboard")}
+              >
+                <FiActivity /> Сводка
+              </button>
               <button
                 className={`admin-tab-btn ${activeTab === "students" ? "active" : ""}`}
                 onClick={() => setActiveTab("students")}
               >
                 <FiActivity /> 📊 1. Мониторинг учеников
+              </button>
+              <button
+                className={`admin-tab-btn ${activeTab === "submissions" ? "active" : ""}`}
+                onClick={() => setActiveTab("submissions")}
+              >
+                <FiFileText /> Работы на проверку
               </button>
               <button
                 className={`admin-tab-btn ${activeTab === "courses" ? "active" : ""}`}
@@ -607,6 +773,56 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
 
             {/* КОНТЕНТ ВКЛАДОК */}
             <div className="admin-content">
+              {workflowMessage && (
+                <div
+                  className={workflowMessage.kind === "error" ? "error-state" : "alert-success-banner"}
+                  role={workflowMessage.kind === "error" ? "alert" : "status"}
+                >
+                  {workflowMessage.text}
+                  <button
+                    type="button"
+                    className="teacher-notice-dismiss"
+                    aria-label="Скрыть уведомление"
+                    onClick={() => setWorkflowMessage(null)}
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+              {activeTab === "dashboard" && (
+                <section aria-labelledby="teacher-dashboard-title">
+                  <div className="section-header-row" style={{ marginBottom: 20 }}>
+                    <h2 id="teacher-dashboard-title" style={{ fontSize: "1.4rem", margin: 0 }}>Обзор обучения</h2>
+                    <button className="btn-secondary" onClick={loadDashboard} disabled={dashboardLoading}>
+                      <FiRefreshCw /> Обновить
+                    </button>
+                  </div>
+                  {dashboardError && <div className="error-state" role="alert">{dashboardError}</div>}
+                  {dashboardLoading && !dashboard && <div role="status">Загружаем статистику...</div>}
+                  {!dashboardLoading && dashboard && (
+                    <div className="dashboard-stats-grid">
+                      {[
+                        { label: "Ученики", value: dashboard.total_students, icon: <FiUsers /> },
+                        { label: "Активные за неделю", value: dashboard.active_students, icon: <FiActivity /> },
+                        { label: "Группы", value: dashboard.total_groups, icon: <FiUserPlus /> },
+                        { label: "Курсы", value: dashboard.total_courses, icon: <FiBookOpen /> },
+                        { label: "Завершённые курсы", value: dashboard.completed_courses_count, icon: <FiAward /> },
+                      ].map((stat) => (
+                        <article className="stat-card" key={stat.label}>
+                          <div className="stat-icon" aria-hidden="true">{stat.icon}</div>
+                          <div>
+                            <span className="stat-label">{stat.label}</span>
+                            <p className="stat-value">{stat.value}</p>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {activeTab === "submissions" && <TeacherSubmissionsPanel />}
+
               {/* --- ВКЛАДКА 1: МОНИТОРИНГ УЧЕНИКОВ --- */}
               {activeTab === "students" && (
                 <div className="students-view animate-fade-in">
@@ -623,10 +839,82 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                       onKeyDown={(e) => e.key === "Enter" && loadStudents()}
                       className="search-input"
                     />
-                    <button className="btn-primary" onClick={loadStudents}>
+                    <button className="btn-primary" onClick={() => void loadStudents()}>
                       <FiRefreshCw /> Обновить список
                     </button>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={showArchivedStudents}
+                        onChange={(event) => {
+                          const includeArchived = event.target.checked;
+                          setShowArchivedStudents(includeArchived);
+                          void loadStudents(includeArchived);
+                        }}
+                      />
+                      Показать архив
+                    </label>
+                    <button className="btn-primary" onClick={() => setQuickCreateOpen((open) => !open)}>
+                      <FiUserPlus /> Добавить ученика
+                    </button>
                   </div>
+                  {studentActionMessage && (
+                    <div
+                      className={studentActionMessage.kind === "error" ? "error-state" : "alert-success-banner"}
+                      role={studentActionMessage.kind === "error" ? "alert" : "status"}
+                    >
+                      {studentActionMessage.text}
+                      <button
+                        type="button"
+                        className="teacher-notice-dismiss"
+                        aria-label="Скрыть уведомление"
+                        onClick={() => setStudentActionMessage(null)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
+                  {quickCreateOpen && (
+                    <form className="quick-actions-box" onSubmit={handleQuickCreateStudent}>
+                      <h3>Создать учётную запись ученика</h3>
+                      <div className="form-group">
+                        <label htmlFor="quick-student-first-name">Имя *</label>
+                        <input
+                          id="quick-student-first-name"
+                          required
+                          maxLength={150}
+                          value={quickCreateFirstName}
+                          onChange={(e) => setQuickCreateFirstName(e.target.value)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="quick-student-last-name">Фамилия *</label>
+                        <input
+                          id="quick-student-last-name"
+                          required
+                          maxLength={150}
+                          value={quickCreateLastName}
+                          onChange={(e) => setQuickCreateLastName(e.target.value)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="quick-student-group">Группа (необязательно)</label>
+                        <select
+                          id="quick-student-group"
+                          value={quickCreateGroupId}
+                          onChange={(e) => setQuickCreateGroupId(e.target.value ? Number(e.target.value) : "")}
+                        >
+                          <option value="">Без группы</option>
+                          {groups.map((group) => (
+                            <option key={group.id} value={group.id}>{group.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <button className="btn-primary" type="submit" disabled={quickCreateLoading}>
+                        {quickCreateLoading ? "Создаём..." : "Создать ученика"}
+                      </button>
+                    </form>
+                  )}
 
                   {newPasswordAlert && (
                     <div className="alert-success-banner">
@@ -637,7 +925,11 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                       </button>
                     </div>
                   )}
-                  {studentsError && <div className="error-state">{studentsError}</div>}
+                  {studentsError && <div className="error-state" role="alert">{studentsError}</div>}
+                  {studentsLoading && <div role="status">Загружаем учеников...</div>}
+                  {!studentsLoading && !studentsError && students.length === 0 && (
+                    <div className="empty-state">Ученики не найдены. Создайте учётную запись или измените поисковый запрос.</div>
+                  )}
 
                   {/* ТАБЛИЦА ВСЕХ УЧЕНИКОВ */}
                   <div className="matrix-table-container" style={{ marginTop: 0, marginBottom: 30 }}>
@@ -674,8 +966,8 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                             </td>
                             <td>{st.completed_lessons || 0}</td>
                             <td>
-                              <span className={`lesson-status-badge ${st.is_active !== false ? "open" : "closed"}`}>
-                                {st.is_active !== false ? "Активен" : "Заблокирован"}
+                              <span className={`lesson-status-badge ${st.is_archived ? "closed" : st.is_active !== false ? "open" : "closed"}`}>
+                                {st.is_archived ? "В архиве" : st.is_active !== false ? "Активен" : "Заблокирован"}
                               </span>
                             </td>
                             <td>
@@ -683,18 +975,29 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                                 <button className="btn-secondary" title="Профиль" onClick={() => handleViewStudentDetail(st.id)}>
                                   <FiEye />
                                 </button>
-                                <button className="btn-secondary" title="Сбросить пароль" onClick={() => handleResetPassword(st.id)}>
-                                  <FiKey />
-                                </button>
-                                <button className="btn-secondary" title="Сбросить прогресс" onClick={() => handleResetProgress(st.id)}>
-                                  <FiRefreshCw />
-                                </button>
+                                {!st.is_archived && (
+                                  <>
+                                    <button className="btn-secondary" title="Сбросить пароль" onClick={() => handleResetPassword(st.id)}>
+                                      <FiKey />
+                                    </button>
+                                    <button className="btn-secondary" title="Сбросить прогресс" onClick={() => handleResetProgress(st.id)}>
+                                      <FiRefreshCw />
+                                    </button>
+                                    <button
+                                      className="btn-danger"
+                                      title={st.is_active !== false ? "Заблокировать" : "Разблокировать"}
+                                      onClick={() => handleToggleStudentStatus(st.id)}
+                                    >
+                                      {st.is_active !== false ? <FiLock /> : <FiUnlock />}
+                                    </button>
+                                  </>
+                                )}
                                 <button
-                                  className="btn-danger"
-                                  title={st.is_active !== false ? "Заблокировать" : "Разблокировать"}
-                                  onClick={() => handleToggleStudentStatus(st.id)}
+                                  className={st.is_archived ? "btn-secondary" : "btn-danger"}
+                                  title={st.is_archived ? "Восстановить из архива" : "Архивировать"}
+                                  onClick={() => handleSetStudentArchived(st.id, !st.is_archived)}
                                 >
-                                  {st.is_active !== false ? <FiLock /> : <FiUnlock />}
+                                  <FiArchive />
                                 </button>
                               </div>
                             </td>
@@ -752,6 +1055,10 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
 
                   {matrixLoading ? (
                     <div style={{ padding: 20, textAlign: "center" }}>Загрузка успеваемости...</div>
+                  ) : groups.length === 0 ? (
+                    <div className="empty-state">Создайте группу, чтобы просматривать успеваемость.</div>
+                  ) : selectedGroupId && !selectedCourseId ? (
+                    <div className="empty-state">Назначьте курс выбранной группе, чтобы открыть матрицу успеваемости.</div>
                   ) : matrixData ? (
                     <div className="matrix-table-container">
                       <table className="matrix-table">
@@ -805,7 +1112,17 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                       </table>
                     </div>
                   ) : matrixError ? (
-                    <div className="error-state">{matrixError}</div>
+                    <div className="error-state" role="alert">
+                      {matrixError}{" "}
+                      {selectedGroupId && selectedCourseId && (
+                        <button
+                          className="btn-secondary"
+                          onClick={() => void loadMatrix(selectedGroupId, selectedCourseId)}
+                        >
+                          Повторить
+                        </button>
+                      )}
+                    </div>
                   ) : null}
                 </div>
               )}
@@ -816,6 +1133,9 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                   <div className="section-header-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                     <h2 style={{ fontSize: "1.4rem", margin: 0 }}>📚 Загрузка и управление курсами</h2>
                     <div style={{ display: "flex", gap: 12 }}>
+                      <button className="btn-primary" onClick={() => navigate("/create-course")}>
+                        Расширенный редактор
+                      </button>
                       <button className="btn-secondary" onClick={() => setShowMarkdownImportModal(true)}>
                         <FiUploadCloud /> Импортировать урок (.md)
                       </button>
@@ -858,31 +1178,18 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                     )}
                   </div>
 
-                  {/* БЛОКИ КУРСА */}
                   <div className="quick-actions-box">
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                      <h3 style={{ margin: 0 }}>Модули и уроки курса</h3>
-                      <button className="btn-primary" onClick={() => setShowAddBlockModal(true)}>
-                        <FiPlus /> Добавить модуль/блок
-                      </button>
-                    </div>
-
-                    {courses.find((c) => c.id === selectedCourseForEdit)?.lessons?.map((lesson: any) => (
-                      <div key={lesson.id} className="lesson-access-card unlocked" style={{ marginBottom: 10 }}>
-                        <div className="lesson-card-top">
-                          <div>
-                            <strong>Модуль {lesson.order}: {lesson.title}</strong>
-                            <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-                              Формат: Markdown / Текстовый интерактивный урок
-                            </p>
-                          </div>
-                          <span className="lesson-status-badge open">Активен</span>
-                        </div>
-                      </div>
-                    )) || (
-                      <div style={{ padding: 20, textAlign: "center", color: "var(--text-secondary)" }}>
-                        У этого курса пока нет созданных модулей. Нажмите «Добавить модуль/блок» или «Импортировать урок (.md)».
-                      </div>
+                    {courses.length === 0 && (
+                      <div className="empty-state">Курсов пока нет. Создайте курс, чтобы начать добавлять разделы и уроки.</div>
+                    )}
+                    {selectedCourseForEdit && (
+                      <>
+                      <TeacherCourseContentPanel
+                        key={selectedCourseForEdit}
+                        courseId={selectedCourseForEdit}
+                      />
+                      <TeacherAssignmentsPanel courseId={selectedCourseForEdit} />
+                      </>
                     )}
                   </div>
                 </div>
@@ -1058,6 +1365,9 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
                   {/* СПИСОК ВСЕХ ГРУПП С УЧЕНИКАМИ */}
                   <h3 style={{ marginBottom: 16, fontSize: "1.2rem" }}>Список созданных учебных групп</h3>
                   <div className="admin-grid">
+                    {groups.length === 0 && (
+                      <div className="empty-state">Групп пока нет. Создайте группу с помощью формы выше.</div>
+                    )}
                     {groups.map((g) => (
                       <div key={g.id} className="admin-card">
                         <div className="card-header">
@@ -1181,14 +1491,99 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
               <div className="modal-overlay">
                 <div className="modal-content">
                   <h3>Профиль ученика: {selectedStudentDetail.first_name} {selectedStudentDetail.last_name}</h3>
-                  <div style={{ margin: "16px 0", lineHeight: 1.6 }}>
-                    <p><strong>Email:</strong> {selectedStudentDetail.email}</p>
-                    <p><strong>Группа:</strong> {selectedStudentDetail.group_name}</p>
-                    <p><strong>Общий прогресс:</strong> {selectedStudentDetail.progress_percent}%</p>
-                    <p><strong>Пройдено уроков:</strong> {selectedStudentDetail.completed_lessons_count}</p>
-                  </div>
+                  {studentEditError && <div className="error-state" role="alert">{studentEditError}</div>}
+                  {editingStudent ? (
+                    <form onSubmit={handleUpdateStudent}>
+                      <div className="form-group">
+                        <label htmlFor="edit-student-first-name">Имя</label>
+                        <input
+                          id="edit-student-first-name"
+                          required
+                          maxLength={150}
+                          value={studentEditForm.first_name}
+                          onChange={(event) => setStudentEditForm((form) => ({
+                            ...form,
+                            first_name: event.target.value,
+                          }))}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="edit-student-last-name">Фамилия</label>
+                        <input
+                          id="edit-student-last-name"
+                          required
+                          maxLength={150}
+                          value={studentEditForm.last_name}
+                          onChange={(event) => setStudentEditForm((form) => ({
+                            ...form,
+                            last_name: event.target.value,
+                          }))}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="edit-student-email">Email</label>
+                        <input
+                          id="edit-student-email"
+                          type="email"
+                          required
+                          value={studentEditForm.email}
+                          onChange={(event) => setStudentEditForm((form) => ({
+                            ...form,
+                            email: event.target.value,
+                          }))}
+                        />
+                      </div>
+                      <div className="modal-actions">
+                        <button className="btn-primary" type="submit" disabled={studentEditLoading}>
+                          {studentEditLoading ? "Сохраняем..." : "Сохранить"}
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          type="button"
+                          onClick={() => {
+                            setEditingStudent(false);
+                            setStudentEditError(null);
+                          }}
+                          disabled={studentEditLoading}
+                        >
+                          Отмена
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      <div style={{ margin: "16px 0", lineHeight: 1.6 }}>
+                        <p><strong>Email:</strong> {selectedStudentDetail.email}</p>
+                        <p><strong>Группа:</strong> {selectedStudentDetail.group?.name || "Без группы"}</p>
+                        <p>
+                          <strong>Курсов завершено:</strong>{" "}
+                          {selectedStudentDetail.courses?.filter((course: any) => course.progress_percentage === 100).length || 0}
+                        </p>
+                      </div>
+                      {selectedStudentDetail.courses?.length > 0 && (
+                        <ul>
+                          {selectedStudentDetail.courses.map((course: any) => (
+                            <li key={course.course_id}>
+                              {course.course_title}: {course.progress_percentage}% ({course.completed_lessons}/{course.total_lessons} уроков)
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  )}
                   <div className="modal-actions">
-                    <button className="btn-primary" onClick={() => setDetailModalOpen(false)}>
+                    {!editingStudent && (
+                      <button className="btn-secondary" onClick={() => setEditingStudent(true)}>
+                        Редактировать профиль
+                      </button>
+                    )}
+                    <button
+                      className="btn-primary"
+                      onClick={() => {
+                        setDetailModalOpen(false);
+                        setEditingStudent(false);
+                      }}
+                    >
                       Закрыть
                     </button>
                   </div>
@@ -1196,45 +1591,7 @@ export default function AdminPanel({ theme, toggleTheme }: AdminPanelProps) {
               </div>
             )}
 
-            {/* 2. Создание модуля/блока */}
-            {showAddBlockModal && (
-              <div className="modal-backdrop">
-                <div className="modal-card">
-                  <h3>Создать модуль/блок курса</h3>
-                  <form onSubmit={handleCreateBlock}>
-                    <div className="form-group">
-                      <label>Название блока *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Например, Блок 1. Основы Python"
-                        value={newBlockTitle}
-                        onChange={(e) => setNewBlockTitle(e.target.value)}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Описание блока</label>
-                      <input
-                        type="text"
-                        placeholder="Краткое описание тем..."
-                        value={newBlockDesc}
-                        onChange={(e) => setNewBlockDesc(e.target.value)}
-                      />
-                    </div>
-                    <div className="modal-actions">
-                      <button type="button" className="btn-secondary" onClick={() => setShowAddBlockModal(false)}>
-                        Отмена
-                      </button>
-                      <button type="submit" className="btn-primary">
-                        Создать блок
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            )}
-
-            {/* 3. Создать новый курс */}
+            {/* Создать новый курс */}
             {showCreateCourseModal && (
               <div className="modal-backdrop">
                 <div className="modal-card">

@@ -245,9 +245,25 @@ export interface StudentAssignmentSubmission {
   assignment_id: number;
   student_id: number;
   answer_text: string;
+  language?: "python" | "javascript" | "";
   response_data: Record<string, number[]>;
-  status: "submitted" | "graded";
+  status:
+    | "pending"
+    | "running"
+    | "passed"
+    | "failed"
+    | "timeout"
+    | "runtime_error"
+    | "compile_error"
+    | "system_error"
+    | "submitted"
+    | "graded";
   score: number | null;
+  tests_passed?: number | null;
+  tests_total?: number | null;
+  execution_time_ms?: number | null;
+  memory_used_mb?: number | null;
+  error_message?: string;
   feedback: string;
   has_file: boolean;
   original_file_name: string;
@@ -348,10 +364,19 @@ export async function submitStudentAssignment(
     );
     return res.data as StudentAssignmentSubmission;
   }
+
   const res = await axios.post(
     `${base}/v1/assignments/${assignmentId}/submissions`,
     payload,
   );
+  return res.data as StudentAssignmentSubmission;
+}
+
+export async function retryCodeSubmission(
+  submissionId: number,
+): Promise<StudentAssignmentSubmission> {
+  const base = getBase();
+  const res = await axios.post(`${base}/v1/submissions/${submissionId}/run`);
   return res.data as StudentAssignmentSubmission;
 }
 
@@ -530,78 +555,5 @@ export async function submitExam(examId: number, payload: {
 }) {
   const base = getBase();
   const res = await axios.post(`${base}/v1/exams/${examId}/submit`, payload);
-  return res.data;
-}
-
-// ==========================================
-// Кабинет преподавателя (Teacher Dashboard & Students)
-// ==========================================
-
-export async function fetchTeacherDashboard() {
-  const base = getBase();
-  const res = await axios.get(`${base}/v1/teacher/dashboard`);
-  return res.data;
-}
-
-export async function fetchTeacherCourses() {
-  const base = getBase();
-  const res = await axios.get(`${base}/v1/courses`);
-  if (!Array.isArray(res.data)) {
-    throw new Error("Teacher course response must be an array.");
-  }
-  return res.data;
-}
-
-export async function fetchTeacherStudents(params?: { q?: string; group_id?: number }) {
-  const base = getBase();
-  const res = await axios.get(`${base}/v1/teacher/students`, { params });
-  return res.data;
-}
-
-export async function quickCreateStudent(payload: { first_name: string; last_name: string; group_id?: number }) {
-  const base = getBase();
-  const res = await axios.post(`${base}/v1/teacher/students/quick-create`, payload);
-  return res.data;
-}
-
-export async function fetchTeacherStudentDetail(studentId: number) {
-  const base = getBase();
-  const res = await axios.get(`${base}/v1/teacher/students/${studentId}`);
-  return res.data;
-}
-
-export async function resetStudentPassword(studentId: number) {
-  const base = getBase();
-  const res = await axios.post(`${base}/v1/teacher/students/${studentId}/reset-password`);
-  return res.data;
-}
-
-export async function resetStudentProgress(studentId: number, courseId?: number) {
-  const base = getBase();
-  const res = await axios.post(`${base}/v1/teacher/students/${studentId}/reset-progress`, { course_id: courseId });
-  return res.data;
-}
-
-export async function toggleStudentStatus(studentId: number) {
-  const base = getBase();
-  const res = await axios.post(`${base}/v1/teacher/students/${studentId}/toggle-status`);
-  return res.data;
-}
-
-export async function teacherLogin(payload: { login: string; password: string }) {
-  const base = getBase();
-  const res = await axios.post(`${base}/auth/teacher/login`, payload);
-  return res.data;
-}
-
-export async function teacherRegister(payload: {
-  username: string;
-  email: string;
-  password: string;
-  first_name: string;
-  last_name: string;
-}) {
-  const base = getBase();
-  const res = await axios.post(`${base}/auth/teacher/register`, payload);
   return res.data;
 }

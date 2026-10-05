@@ -33,12 +33,12 @@
 | Область | Уже есть | Отличия и следующий шаг |
 |---|---|---|
 | Backend | Django 5.2 + DRF в приложении `backend/api`; кастомный `User`; курсы, блоки, уроки, экзамены, группы, enrollment и прогресс. | Не создавать повторно `Course`/`Lesson`; сопоставить `CourseBlock` с разделом курса и постепенно добавлять недостающие доменные модели. |
-| Authentication | JWT login/refresh/logout, роль и базовый профиль; запрещена регистрация студентов; teacher создаёт student с временным паролем и first-login password change. | Публичная регистрация преподавателя остаётся и требует отдельного решения по политике. |
+| Authentication | JWT login/refresh/logout, роли и базовые профили; публичная регистрация студентов и преподавателей запрещена; teacher создаёт student с временным паролем и first-login password change. | Создание преподавателя доступно только role=admin или superuser; отдельный admin frontend ещё предстоит добавить. |
 | API и permissions | DRF views используют JWT/RBAC, ownership групп преподавателем, запись студентов только по назначению учителя; не назначенные курсы и закрытые уроки не отдают учебный контент. | Продолжать проверять object-level permissions у новых API и расширять CRUD-тесты; не переводить views на viewsets ради переписывания. |
 | Student frontend | React 19 + TypeScript + Vite в `frontend`; основные страницы уже подключены в `frontend/src/App.tsx`. | Реальные backend-маршруты и доступ студента требуют постепенного согласования с JWT API. |
 | Teacher frontend | Teacher UI переиспользует `AdminPanel`; есть отдельный проект `frontend-teacher` и ещё один wrapper в `frontend/teacher`. | Структура дублирована/неоднозначна; определить основной teacher build. Текущий `docker-compose.yml` запускает только общий `frontend`. |
 | Данные | 13 моделей в `api/models.py`, миграции до `0005`; PostgreSQL настроен, SQLite доступен для локальных тестов. | `StudentProfile`, `TeacherProfile`, `Assignment`, `TestCase`, `Submission`, `Certificate` и `Notification` отсутствуют. Сначала проектировать только необходимые модели и миграции. |
-| Инфраструктура | Docker Compose: PostgreSQL, backend и один frontend; backend запускается через Gunicorn, entrypoint выполняет миграции. | В Compose/requirements пока нет Redis, Celery и Code Runner. CORS/production secrets и production значения по умолчанию необходимо проверить до развёртывания. |
+| Инфраструктура | Docker Compose: PostgreSQL, backend и два независимых frontend-сервиса; backend запускается через Gunicorn, entrypoint выполняет миграции. | В Compose/requirements пока нет Redis, Celery и Code Runner. CORS/production secrets и production значения по умолчанию необходимо проверить до развёртывания. |
 | Code execution | — | Нет Monaco, submission pipeline и изолированного runner. Реализацию начинать только после assignment/submission контрактов; никогда не исполнять код внутри Django. |
 | Проверки | Один файл API-тестов, 14 тестов в текущем состоянии; Django check и migration consistency check проходят. npm build frontend проходит после установки зависимостей. | В текущем полном прогоне 11 тестов прошли, 3 теста деталей/создания курса завершились `KeyError: 'questions'`; это существующая область поведения для отдельного расследования. CI workflow в `.github` не найден. |
 
@@ -154,7 +154,7 @@
 - Отсутствие teacher UI и чужих submissions.
 - Vitest/React Testing Library для основных пользовательских сценариев.
 
-### Текущий прогресс (2026-10-01)
+### Текущий прогресс (2026-10-02)
 
 - Axios повторяет запрос после обновления access token по refresh token; параллельные
   ответы `401` используют общий запрос обновления. При недействительном refresh
@@ -195,17 +195,100 @@
 **Результат:** преподаватель управляет учебным контентом и студентами без
 ручного обращения к API.
 
+### Текущий прогресс (2026-10-02)
+
+- Кабинет преподавателя и авторизация перенесены в самостоятельный проект
+  `frontend-teacher`; student проект больше не содержит teacher routes/components.
+- Оба frontend независимо обращаются к одному Django API и общей PostgreSQL БД.
+  Оба Vite dev server проксируют API на `localhost:8000`; Docker Compose
+  поднимает оба сайта отдельно (порты `80` и `3001`) с same-origin API proxy.
+- Teacher frontend содержит собственные API-клиент, страницу входа,
+  панель управления и расширенный редактор курсов; его исходники не импортируют
+  файлы из student frontend.
+- Student сайт направляет ссылки входа преподавателя на отдельный URL,
+  задаваемый `VITE_TEACHER_APP_URL`.
+- Добавлен Dashboard со статистикой, обновлением и loading/error состояниями;
+  список учеников показывает возвращаемые API значения общего прогресса и числа
+  пройденных уроков.
+- Добавлено создание отдельного ученика через backend API с отображением выданных
+  временных учётных данных. Несостоявшиеся запросы больше не маскируются фиктивными
+  паролями, курсами, уроками или успешными ответами.
+- Публичная регистрация преподавателей удалена из Student и Teacher frontend;
+  устаревшие teacher signup URLs перенаправляются на вход. Backend endpoint
+  создания преподавателя требует роль admin или superuser; тест подтверждает, что
+  даже teacher с `is_staff=True` не может создавать преподавателей. Отдельный
+  административный frontend остаётся
+  будущей задачей.
+- Docker startup больше не создаёт и не сбрасывает demo-аккаунты автоматически;
+  сидирование нужно явно включать через `SEED_DEMO_DATA=1`. Уже существующие
+  demo-аккаунты в базе не изменяются; первый production administrator создаётся
+  отдельной командой `createsuperuser`.
+- Добавлено редактирование имени, фамилии и email ученика с backend-валидацией
+  уникальности; профильный endpoint отвергает попытки редактировать не-student
+  учётную запись.
+- Добавлено обратимое архивирование ученика отдельным `is_archived` состоянием:
+  API скрывает архивные записи по умолчанию, позволяет включить их в Teacher list,
+  блокирует логин, refresh и запросы по уже выданному JWT, не удаляет группы,
+  enrollment, submissions и прогресс. Восстановление снимает только флаг архива,
+  сохраняя исходный `is_active` (включая предшествующую блокировку); reset пароля,
+  прогресса и toggle block недоступны, пока аккаунт архивирован.
+- Согласованы сообщения об ошибках в workflow учеников Teacher UI: backend
+  detail, 401/403/409 и отсутствие сетевого ответа отображаются inline,
+  ошибки помечены `role="alert"`, ошибки загрузки списка позволяют повторить
+  запрос. Успехи архивации, смены блокировки и сброса прогресса объявляются
+  доступным status-сообщением. Добавлен тест отказа архивации с сообщением API.
+- Расширена та же обработка на группы, курсы и матрицу: ошибки создания группы,
+  членства, назначения курса, смены статуса курса, ручного доступа и Markdown
+  импорта выводятся inline с HTTP/API detail; 401/403/409/offline разделяются,
+  успешные операции подтверждаются. Ошибка матрицы содержит кнопку повтора,
+  пустые списки курсов и групп сообщают об отсутствии данных. Добавлены тесты
+  отказа 403 для изменения доступа к уроку и статуса курса.
+- Добавлен редактор заданий курса: создание, изменение и удаление с типами
+  Text/Short Answer/File Upload/Quiz/Multiple Choice/Code, лимитами попыток,
+  сроком сдачи, публикацией, вопросами/вариантами и teacher-only hidden test cases.
+  Изменение типа существующего задания запрещено backend-контрактом и отражено
+  в UI; backend также не разрешает удалять задания с уже отправленными ответами.
+  Исполнение пользовательского кода ещё не реализовано и требует отдельного sandbox.
+- Добавлен редактор основных данных курса, разделов и уроков: редактирование
+  названия/описания/категории/уровня/цены курса, создание и редактирование
+  разделов, создание и изменение Markdown-уроков с типом, порядком,
+  обязательностью и привязкой к разделу. Можно удалять пустые разделы и уроки
+  без истории. Backend отказывает в удалении раздела с уроками/экзаменом и
+  урока с прогрессом/заданиями (HTTP 409), а также проверяет владельца курса,
+  уникальность порядка и допустимость входных значений. Курсы архивируются,
+  но физическое удаление курса не разрешено через UI/API, чтобы не уничтожить
+  записи обучения.
+- Добавлены 5 компонентных тестов редактора курса и backend regression test
+  на CRUD разделов/уроков, проверку ownership и защиту прогресса.
+- Teacher frontend suite содержит 20 пройденных тестов для Dashboard,
+  студентов, submissions/оценивания, заданий и редактора курса; production-сборка
+  teacher app проходит. Backend suite содержит 38 пройденных API-тестов.
+- Добавлена вкладка отправленных работ: преподаватель видит ответы учеников по
+  своим заданиям, скачивает вложения и выставляет оценку с отзывом; API на
+  backend проверяет права автора курса, а интерфейс показывает loading, empty,
+  error и permission-denied состояния.
+- Основные loading/empty/error/permission-denied состояния teacher workflow
+  покрыты; остаётся расширять тестирование по мере добавления функций. Полное
+  удаление курса не планируется без отдельной миграции/
+  архивной стратегии для учебной истории.
+
 ## Phase 6 — Monaco и submissions
 
 **Цель:** реализовать полный путь отправки программного решения.
 
 ### Реализация
 
-- Monaco Editor с language mode, autocomplete, line numbers и темами.
-- Run, Submit и Reset.
-- Submission model и статусы выполнения.
-- Ограничение allowed attempts и хранение результата.
-- UI для pending/running/completed/error состояний.
+- [x] Monaco Editor с language mode для Python/JavaScript, autocomplete, line
+  numbers, светлой/тёмной темой и ленивой загрузкой.
+- [x] Submit через текущий API с сохранением контракта `source_code`, reset к
+  starter code, лимит 50 000 символов и счётчик в UI.
+- [x] Run, Submission model и статусы выполнения добавлены через отдельный
+  изолированный Code Runner; пользовательский код не запускается в браузере,
+  Django или Celery worker.
+- [x] Существующие allowed attempts и хранение результата остаются частью
+  текущего Assignment API/UI.
+- [x] UI показывает статусы выполнения, агрегированные результаты и разрешает
+  повторно поставить в очередь только system_error submission.
 
 ### Проверка
 
@@ -213,7 +296,9 @@
 - Hidden test implementation не возвращается API.
 - Повторная отправка и ошибки отображаются предсказуемо.
 
-**Результат:** студент может написать код и отправить его через backend.
+**Результат:** студент может отправить код на асинхронное выполнение отдельным
+runner; UI получает только агрегированные результаты, без stdout/stderr и данных
+hidden tests.
 
 ## Phase 7 — Code Runner
 
@@ -226,23 +311,29 @@ isolated container → tests → result → Django → Student`
 
 ### Реализация
 
-- Отдельный Code Runner service.
-- Очередь Celery/Redis и идемпотентная обработка submission.
-- Одноразовый sandbox-контейнер на каждый запуск.
-- CPU, RAM, time, process, filesystem и lifetime limits.
-- Network disabled, без privileged mode и host mounts.
-- Уничтожение sandbox после завершения или timeout.
+- [x] Отдельный Code Runner service для выделенного runner host/VM.
+- [x] Очередь Celery/Redis; в broker передаётся только ID submission.
+- [x] Одноразовый sandbox-контейнер на каждый hidden test.
+- [x] CPU, RAM, time, process, filesystem и lifetime limits.
+- [x] Network disabled, без privileged mode и host mounts.
+- [x] Уничтожение sandbox после завершения или timeout.
 
 ### Проверка
 
-- Passed/failed/compile/runtime/timeout/system statuses.
-- Timeout и memory limit tests.
-- Malicious code и fork/process tests.
-- Network isolation tests.
-- Проверка, что runner не принимает arbitrary Docker commands.
+- [x] Passed/failed/compile/runtime/timeout/system statuses.
+- [x] Unit tests проверяют timeout cleanup и sandbox CPU/RAM/PID/network/mount
+  configuration.
+- [x] Интеграционные тесты на фактические memory/time/network/PID limits,
+  hostile code и отсутствие host Docker socket проходят на локальном Linux
+  container engine.
+- [ ] Повторить интеграционные тесты на выделенном runner host/VM перед
+  production deployment.
+- [x] API не принимает arbitrary Docker commands; sandbox использует фиксированные
+  runtime images и команду.
 
-**Результат:** code assignment работает через изолированный runner с
-защищёнными hidden tests.
+**Результат:** инфраструктурный код runner и async pipeline готовы; перед
+включением в production нужны настройки отдельной VM, HTTPS/firewall и
+интеграционные sandbox-тесты на этой VM.
 
 ## Phase 8 — Docker и production configuration
 
@@ -250,16 +341,25 @@ isolated container → tests → result → Django → Student`
 
 ### Реализация
 
-- Services: nginx, backend, student-frontend, teacher-frontend, postgres,
-  redis, celery, code-runner.
-- `.env.example` для DATABASE_URL, SECRET_KEY, JWT_SECRET и сервисных URL.
-- Health checks, migrations, startup order и logging.
+- [x] Application Compose: backend, student-frontend, teacher-frontend,
+  PostgreSQL, Redis и Celery worker; Code Runner имеет отдельный Compose
+  для выделенной runner host/VM.
+- [x] Корневой и runner `.env.example` для database, Django/JWT secrets,
+  runner token и deployment URLs.
+- [x] Backend production startup через Gunicorn с migrations и collectstatic.
+- [x] Health checks для PostgreSQL, Redis, backend и Code Runner; migration checks
+  в CI; startup dependency order и persisted Redis queue.
+- [x] Позднее подтверждение Celery задач с повторной доставкой по стабильному
+  task ID и хостовый reaper для контейнеров, оставшихся после аварии runner.
+- [x] Блокировать изменение execution contract Code Assignment после первой
+  submission, чтобы очередь всегда проверяла код теми же тестами и лимитами.
 - Production server вместо Django development server.
 - CORS, CSRF, rate limiting и secure token/cookie settings.
 
 ### Проверка
 
-- Чистый запуск через Docker Compose.
+- [x] Проверена конфигурация обоих Compose-файлов с example environment files.
+- [ ] Чистый запуск всей системы через Docker Compose.
 - PostgreSQL и Redis доступны backend/Celery.
 - Code Runner не имеет доступа к host filesystem и сети.
 - Секреты отсутствуют в tracked files.
@@ -270,7 +370,8 @@ isolated container → tests → result → Django → Student`
 
 ### Реализация
 
-- CI для lint, type-check, backend/frontend tests и sandbox tests.
+- [x] CI для backend tests/migration checks, frontend type-check/build/tests и
+  isolated runner unit/integration tests.
 - Документация запуска, env variables, API и архитектуры.
 - Health/error monitoring и понятные логи.
 - Аудит SQL injection, XSS, file upload и permission boundaries.

@@ -202,9 +202,6 @@ function RegPage({ theme, toggleTheme }: RegPageProps) {
                             <span>Уже есть аккаунт? </span>
                             <Link to="/login" className="sl-auth-link">Войти</Link>
                         </div>
-                        <div className="sl-auth-footer" style={{ marginTop: '8px' }}>
-                            <Link to="/teacher-register" className="sl-auth-link sl-auth-link--secondary">Регистрация для преподавателей →</Link>
-                        </div>
                     </div>
                 </main>
             </div>

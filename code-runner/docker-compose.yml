@@ -1,0 +1,25 @@
+services:
+  code-runner:
+    build: .
+    restart: unless-stopped
+    environment:
+      CODE_RUNNER_TOKEN: ${CODE_RUNNER_TOKEN:?Set CODE_RUNNER_TOKEN}
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
+    ports:
+      - "127.0.0.1:8081:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import requests; requests.get('http://127.0.0.1:8080/health', timeout=2).raise_for_status()"
+      interval: 15s
+      timeout: 3s
+      retries: 3
