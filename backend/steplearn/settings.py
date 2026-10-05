@@ -1,3 +1,4 @@
+import datetime
 import os
 from pathlib import Path
 
@@ -7,7 +8,13 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
-DEBUG = os.getenv('DJANGO_DEBUG', '0') == '1'
+
+def env_flag(name, default=False):
+    raw = os.getenv(name, str(default))
+    return str(raw).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+DEBUG = env_flag('DJANGO_DEBUG', False)
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 if not SECRET_KEY:
     if not DEBUG:
@@ -118,10 +125,30 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-SECURE_SSL_REDIRECT = False
+SECURE_SSL_REDIRECT = env_flag('SECURE_SSL_REDIRECT', False)
+SESSION_COOKIE_SECURE = env_flag('SESSION_COOKIE_SECURE', not DEBUG)
+CSRF_COOKIE_SECURE = env_flag('CSRF_COOKIE_SECURE', not DEBUG)
+CSRF_COOKIE_HTTPONLY = True
+SESSION_COOKIE_HTTPONLY = True
+SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000' if not DEBUG else '0'))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_flag('SECURE_HSTS_INCLUDE_SUBDOMAINS', not DEBUG)
+SECURE_HSTS_PRELOAD = env_flag('SECURE_HSTS_PRELOAD', not DEBUG)
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'same-origin'
+X_FRAME_OPTIONS = 'DENY'
 
 SIMPLE_JWT = {
     'SIGNING_KEY': os.getenv('JWT_SECRET') or SECRET_KEY,
+    'ACCESS_TOKEN_LIFETIME': datetime.timedelta(
+        minutes=int(os.getenv('JWT_ACCESS_TOKEN_LIFETIME_MINUTES', '15'))
+    ),
+    'REFRESH_TOKEN_LIFETIME': datetime.timedelta(
+        days=int(os.getenv('JWT_REFRESH_TOKEN_LIFETIME_DAYS', '7'))
+    ),
+    'ROTATE_REFRESH_TOKENS': env_flag('JWT_ROTATE_REFRESH_TOKENS', True),
+    'BLACKLIST_AFTER_ROTATION': env_flag('JWT_BLACKLIST_AFTER_ROTATION', True),
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
 }
 
 REST_FRAMEWORK = {
@@ -132,6 +159,14 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
     ] + (['rest_framework.renderers.BrowsableAPIRenderer'] if DEBUG else []),
     'DEFAULT_PARSER_CLASSES': ['rest_framework.parsers.JSONParser'],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': os.getenv('DRF_THROTTLE_ANON', '30/min'),
+        'user': os.getenv('DRF_THROTTLE_USER', '180/min'),
+    },
     'EXCEPTION_HANDLER': 'api.exceptions.custom_exception_handler',
 }
 

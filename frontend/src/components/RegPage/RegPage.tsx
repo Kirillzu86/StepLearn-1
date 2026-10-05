@@ -9,6 +9,12 @@ import "../LogPage/StyleLogPage.css";
 
 type IconProps = SVGProps<SVGSVGElement>;
 
+type ErrorResponse = {
+    detail?: string | string[] | Array<{ msg?: string }>;
+    username?: string[];
+    email?: string[];
+};
+
 const Icons = {
     User: (props: IconProps) => (
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -53,7 +59,7 @@ interface RegPageProps {
     toggleTheme: () => void;
 }
 
-function RegPage({ theme, toggleTheme }: RegPageProps) {
+function RegPage(_: RegPageProps) {
     const navigate = useNavigate();
     const [formData, setFormData] = useState({ username: '', email: '', password: '', confirmPassword: '' });
     const [message, setMessage] = useState({ text: '', type: '' });
@@ -105,16 +111,21 @@ function RegPage({ theme, toggleTheme }: RegPageProps) {
             }
 
             if (!res.ok) {
-                let data: any = {};
+                let data: ErrorResponse = {};
                 try {
-                    data = await res.json();
+                    data = await res.json() as ErrorResponse;
                 } catch {
-                    data.detail = await res.text().catch(() => `Ошибка ${res.status}`);
+                    data = { detail: await res.text().catch(() => `Ошибка ${res.status}`) };
                 }
-                const errorMsg = typeof data.detail === 'string' ? data.detail : 
-                    (Array.isArray(data.detail) ? data.detail[0]?.msg : null) || 
-                    (data.username ? data.username[0] : null) || 
-                    (data.email ? data.email[0] : null) || 
+                const detailValue = data.detail;
+                const firstDetailMessage = Array.isArray(detailValue)
+                    ? detailValue.find((item): item is { msg?: string } => typeof item === 'object' && item !== null && 'msg' in item)?.msg
+                    : typeof detailValue === 'string'
+                        ? detailValue
+                        : null;
+                const errorMsg = firstDetailMessage ||
+                    (data.username ? data.username[0] : null) ||
+                    (data.email ? data.email[0] : null) ||
                     "Не удалось создать аккаунт";
                 throw new Error(errorMsg);
             }
@@ -128,8 +139,9 @@ function RegPage({ theme, toggleTheme }: RegPageProps) {
             }
             setMessage({ text: `Аккаунт успешно создан!`, type: 'success' });
             setTimeout(() => navigate('/'), 800);
-        } catch (err: any) {
-            setMessage({ text: err.message || 'Ошибка при регистрации', type: 'error' });
+        } catch (err: unknown) {
+            const messageText = err instanceof Error ? err.message : 'Ошибка при регистрации';
+            setMessage({ text: messageText || 'Ошибка при регистрации', type: 'error' });
         } finally {
             setSubmitting(false);
         }

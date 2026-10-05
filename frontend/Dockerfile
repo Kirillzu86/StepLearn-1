@@ -12,6 +12,7 @@ COPY package*.json ./
 COPY tsconfig*.json ./
 COPY vite.config.ts ./
 COPY src ./src
+COPY UI ./UI
 COPY index.html ./
 
 RUN npm install --production=false

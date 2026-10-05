@@ -496,7 +496,7 @@ export default function Assignments() {
       <Header />
       <div className="sl-layout">
         <Sidebar />
-        <main className="sl-main">
+        <main className="sl-main sl-page-shell">
           <div className="sl-ass-container">
             <div className="sl-ass-header">
               <h1 className="sl-ass-title">Задания и проекты</h1>

@@ -156,10 +156,7 @@ function CatalogCourseCard({ course }: { course: Course }) {
   );
 }
 
-export default function Catalog({
-  theme,
-  toggleTheme,
-}: {
+export default function Catalog(_: {
   theme: "dark" | "light";
   toggleTheme: () => void;
 }) {
@@ -173,11 +170,16 @@ export default function Catalog({
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const toCourseArray = (data: any): Course[] => {
-    if (Array.isArray(data)) return data;
-    if (data && Array.isArray(data.data)) return data.data;
-    if (data && Array.isArray(data.results)) return data.results;
-    if (data && Array.isArray(data.courses)) return data.courses;
+  const toCourseArray = (data: unknown): Course[] => {
+    if (Array.isArray(data)) {
+      return data.filter((item): item is Course => typeof item === "object" && item !== null && "id" in item) as Course[];
+    }
+    if (data && typeof data === "object") {
+      const candidate = data as Record<string, unknown>;
+      if (Array.isArray(candidate.data)) return candidate.data.filter((item): item is Course => typeof item === "object" && item !== null && "id" in item) as Course[];
+      if (Array.isArray(candidate.results)) return candidate.results.filter((item): item is Course => typeof item === "object" && item !== null && "id" in item) as Course[];
+      if (Array.isArray(candidate.courses)) return candidate.courses.filter((item): item is Course => typeof item === "object" && item !== null && "id" in item) as Course[];
+    }
     return [];
   };
 
@@ -194,7 +196,7 @@ export default function Catalog({
       try {
         const ts = Date.now();
         const base = API_URL ? API_URL.replace(/\/$/, "") : "";
-        let rawCourses: any[] = [];
+        let rawCourses: unknown[] = [];
 
         try {
           rawCourses = await fetchCourses(undefined, ts);
@@ -221,7 +223,7 @@ export default function Catalog({
           try {
             const resp = await axios.get(`${base}/v1/users/${user.id}/courses?_t=${ts}`, { timeout: 5000 });
             const enrolledList = toCourseArray(resp.data);
-            myIds = new Set(enrolledList.map((c: any) => c.id));
+            myIds = new Set(enrolledList.map((c) => Number(c.id)));
           } catch {
             // silent ignore user enrollment error
           }
@@ -235,7 +237,7 @@ export default function Catalog({
         }));
 
         setCourses(withStatus);
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error("Catalog fetch error:", e);
         setCourses(fallbackCourses);
       } finally {
@@ -330,7 +332,7 @@ export default function Catalog({
       <Header />
       <div className="sl-layout">
         <Sidebar />
-        <main className="sl-main">
+        <main className="sl-main sl-page-shell">
           {/* Page title & Search bar */}
           <div className="sl-catalog-header">
             <h1 className="sl-catalog-header__title">Каталог курсов</h1>
@@ -369,7 +371,12 @@ export default function Catalog({
             <div className="sl-catalog-toolbar__sort">
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as any)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === "popular" || value === "rating" || value === "new") {
+                    setSortBy(value);
+                  }
+                }}
                 className="sl-catalog-toolbar__select"
               >
                 <option value="popular">По популярности</option>

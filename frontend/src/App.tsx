@@ -116,15 +116,15 @@ function App() {
       } />
       <Route path="/notifications" element={<Notifications theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/settings" element={<Settings theme={theme} toggleTheme={toggleTheme} />} />
-      <Route path="/professions" element={<Professions theme={theme} toggleTheme={toggleTheme} />} />
-      <Route path="/learning-path" element={<LearningPath theme={theme} toggleTheme={toggleTheme} />} />
-      <Route path="/community" element={<Community theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/professions" element={<Professions />} />
+      <Route path="/learning-path" element={<LearningPath />} />
+      <Route path="/community" element={<Community />} />
       <Route path="/assignments" element={
         <RouteGuard roles={["student"]}>
           <Assignments />
         </RouteGuard>
       } />
-      <Route path="/calendar" element={<Calendar theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/calendar" element={<Calendar />} />
       <Route path="/my-courses" element={
         <RouteGuard roles={["student"]}>
           <MyCourses />
@@ -135,7 +135,7 @@ function App() {
           <Certificates />
         </RouteGuard>
       } />
-      <Route path="/help" element={<Help theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/help" element={<Help />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -55,7 +55,7 @@ const initialNotifications: NotificationItem[] = [
   },
 ];
 
-export default function Notifications({ theme, toggleTheme }: NotificationsProps) {
+export default function Notifications(_: NotificationsProps) {
   const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
   const [filter, setFilter] = useState<"all" | "unread" | "course" | "system">("all");
 
@@ -102,7 +102,7 @@ export default function Notifications({ theme, toggleTheme }: NotificationsProps
       <Header />
       <div className="sl-layout">
         <Sidebar />
-        <main className="sl-main">
+        <main className="sl-main sl-page-shell">
           <div className="sl-notif-container">
             {/* Page Header */}
             <div className="sl-notif-header">

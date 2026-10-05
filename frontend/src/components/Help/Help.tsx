@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import Header from "../Header/Header";
 import Sidebar from "../Sidebar/sidebar";
-import { FiHelpCircle, FiSearch, FiChevronDown, FiChevronUp, FiSend, FiMessageCircle, FiBookOpen } from "react-icons/fi";
+import { FiSearch, FiChevronDown, FiChevronUp, FiSend, FiMessageCircle } from "react-icons/fi";
 import "../HomePage/StyleHomePage.css";
 import "../Sidebar/StyleSidebar.css";
 import "./StyleHelp.css";
@@ -30,7 +30,7 @@ const faqList: FAQItem[] = [
   },
 ];
 
-export default function Help({ theme, toggleTheme }: { theme: "dark" | "light"; toggleTheme: () => void }) {
+export default function Help() {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
@@ -59,7 +59,7 @@ export default function Help({ theme, toggleTheme }: { theme: "dark" | "light"; 
       <Header />
       <div className="sl-layout">
         <Sidebar />
-        <main className="sl-main">
+        <main className="sl-main sl-page-shell">
           <div className="sl-help-container">
             <div className="sl-help-header">
               <h1 className="sl-help-title">Центр помощи и поддержки</h1>

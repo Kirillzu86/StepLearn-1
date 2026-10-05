@@ -1,7 +1,7 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent, type SVGProps, type FC } from "react";
 import { API_URL } from "../../api/api";
 import { TEACHER_APP_URL } from "../../api/appUrls";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import Header from "../Header/Header";
 import Sidebar from "../Sidebar/sidebar";
 import "../HomePage/StyleHomePage.css";
@@ -9,6 +9,14 @@ import "../Sidebar/StyleSidebar.css";
 import "./StyleLogPage.css";
 
 type IconProps = SVGProps<SVGSVGElement>;
+
+type PendingUser = {
+    access?: string;
+    must_change_password?: boolean;
+    username?: string;
+    email?: string;
+    [key: string]: unknown;
+};
 
 const Icons = {
     User: (props: IconProps) => (
@@ -54,7 +62,7 @@ interface LogPageProps {
     toggleTheme: () => void;
 }
 
-function LogPage({ theme, toggleTheme }: LogPageProps) {
+function LogPage(_: LogPageProps) {
     const [formData, setFormData] = useState({ login: '', password: '' });
     const [message, setMessage] = useState({ text: '', type: '' });
     const [errors, setErrors] = useState({ login: false, password: false });
@@ -63,7 +71,7 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
     const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
     const [newPassword, setNewPassword] = useState('');
     const [confirmNewPassword, setConfirmNewPassword] = useState('');
-    const [pendingUser, setPendingUser] = useState<any>(null);
+    const [pendingUser, setPendingUser] = useState<PendingUser | null>(null);
     const [currentPassword, setCurrentPassword] = useState('');
     const navigate = useNavigate();
 
@@ -71,7 +79,7 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
         const storedUser = window.localStorage.getItem('currentUser');
         if (!storedUser) return;
         try {
-            const user = JSON.parse(storedUser);
+            const user = JSON.parse(storedUser) as PendingUser;
             if (user.must_change_password && user.access) {
                 setPendingUser(user);
                 setPasswordChangeRequired(true);
@@ -124,8 +132,9 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
                 window.dispatchEvent(new Event('currentUserChanged'));
             }
             navigate('/');
-        } catch (err: any) {
-            setMessage({ text: err.message || "Ошибка при входе", type: "error" });
+        } catch (err: unknown) {
+            const messageText = err instanceof Error ? err.message : "Ошибка при входе";
+            setMessage({ text: messageText || "Ошибка при входе", type: "error" });
         } finally {
             setSubmitting(false);
         }
@@ -167,14 +176,23 @@ function LogPage({ theme, toggleTheme }: LogPageProps) {
             window.localStorage.setItem('currentUser', JSON.stringify(updatedUser));
             window.dispatchEvent(new CustomEvent('currentUserChanged', { detail: updatedUser }));
             navigate('/');
-        } catch (err: any) {
-            setMessage({ text: err.message || 'Ошибка при смене пароля.', type: 'error' });
+        } catch (err: unknown) {
+            const messageText = err instanceof Error ? err.message : 'Ошибка при смене пароля.';
+            setMessage({ text: messageText || 'Ошибка при смене пароля.', type: 'error' });
         } finally {
             setSubmitting(false);
         }
     };
 
-    const renderInputField = (label: string, type: string, name: keyof typeof formData, Icon: FC<IconProps>, isPass = false, visible = false, toggle = () => {}) => {
+    const renderInputField = (
+        label: string,
+        type: string,
+        name: keyof typeof formData,
+        Icon: FC<IconProps>,
+        isPass = false,
+        visible = false,
+        toggle: () => void = () => undefined,
+    ) => {
         const hasError = errors[name];
         return (
             <div className="sl-auth-input-group">

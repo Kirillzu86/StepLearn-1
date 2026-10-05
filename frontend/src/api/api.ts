@@ -23,6 +23,15 @@ interface RefreshResponse {
   refresh?: string;
 }
 
+interface CustomCourse {
+  id?: number | string;
+  [key: string]: unknown;
+}
+
+type CourseRecord = CustomCourse & {
+  id: number | string;
+};
+
 let refreshRequest: Promise<string> | null = null;
 
 axios.interceptors.request.use((config) => {
@@ -147,20 +156,20 @@ export async function getUsers() {
   return Array.isArray(data) ? data : [];
 }
 
-export function getCustomCourses() {
+export function getCustomCourses(): CustomCourse[] {
   try {
     const raw = typeof window !== 'undefined' ? localStorage.getItem("custom_created_courses") : null;
-    return raw ? JSON.parse(raw) : [];
+    return raw ? JSON.parse(raw) as CustomCourse[] : [];
   } catch {
     return [];
   }
 }
 
-export function saveCustomCourse(course: any) {
+export function saveCustomCourse(course: CustomCourse) {
   try {
     if (typeof window === 'undefined') return;
     const existing = getCustomCourses();
-    const updated = [course, ...existing.filter((c: any) => c.id !== course.id)];
+    const updated = [course, ...existing.filter((c) => c.id !== course.id)];
     localStorage.setItem("custom_created_courses", JSON.stringify(updated));
     try {
       window.dispatchEvent(new CustomEvent('coursesChanged', { detail: course }));
@@ -174,7 +183,7 @@ export function saveCustomCourse(course: any) {
 
 export async function fetchCourses(query?: string, timestamp?: number) {
   const urlStr = `${getBase()}/v1/courses`;
-  let apiCourses: any[] = [];
+  let apiCourses: CourseRecord[] = [];
   try {
     const url = new URL(urlStr, typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:8000');
     if (timestamp) url.searchParams.set('_t', String(timestamp));
@@ -198,10 +207,10 @@ export async function fetchCourses(query?: string, timestamp?: number) {
   }
 
   const customCourses = getCustomCourses();
-  const mergedMap = new Map();
+  const mergedMap = new Map<number | string, CourseRecord>();
   // Merge custom courses first, then API courses
-  [...customCourses, ...apiCourses].forEach((c: any) => {
-    if (c && c.id) mergedMap.set(c.id, c);
+  [...customCourses, ...apiCourses].forEach((c) => {
+    if (c && c.id !== undefined && c.id !== null) mergedMap.set(c.id, c as CourseRecord);
   });
 
   return Array.from(mergedMap.values());

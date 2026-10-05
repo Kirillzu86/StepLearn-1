@@ -28,22 +28,34 @@ const extraNavItems: NavItem[] = [
     { title: 'Помощь', icon: FiHelpCircle, path: '/help' },
 ];
 
+type CurrentUser = {
+    username?: string;
+    name?: string;
+    role?: string;
+    avatar_url?: string;
+    is_staff?: boolean;
+};
+
 const Sidebar: React.FC = () => {
-    const [user, setUser] = useState<any>(null);
+    const [user, setUser] = useState<CurrentUser | null>(null);
     const navigate = useNavigate();
     const location = useLocation();
 
     const readUser = () => {
         try {
             const s = localStorage.getItem('currentUser');
-            setUser(s ? JSON.parse(s) : null);
-        } catch (e) {
+            setUser(s ? JSON.parse(s) as CurrentUser : null);
+        } catch {
             setUser(null);
         }
     };
 
     useEffect(() => {
-        readUser();
+        const initializeUser = () => {
+            readUser();
+        };
+
+        initializeUser();
         const onStorage = (e: StorageEvent) => {
             if (e.key === 'currentUser') readUser();
         };
@@ -59,7 +71,11 @@ const Sidebar: React.FC = () => {
     const handleLogout = () => {
         localStorage.removeItem('currentUser');
         setUser(null);
-        try { window.dispatchEvent(new CustomEvent('currentUserChanged')); } catch (e) {}
+        try {
+            window.dispatchEvent(new CustomEvent('currentUserChanged'));
+        } catch {
+            window.dispatchEvent(new Event('currentUserChanged'));
+        }
         navigate('/');
     };
 

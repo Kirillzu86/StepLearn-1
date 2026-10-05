@@ -4,6 +4,18 @@ import { API_URL } from "../../api/api";
 import { Link, useLocation } from "react-router-dom";
 import Header from "../Header/Header";
 import Sidebar from "../Sidebar/sidebar";
+import brandMark from "../../../UI/brand/steplearn-mark.svg";
+import courseIcon from "../../../UI/icons/course.svg";
+import clockIcon from "../../../UI/icons/clock.svg";
+import taskIcon from "../../../UI/icons/task.svg";
+import certificateIcon from "../../../UI/icons/certificate.svg";
+import communityIcon from "../../../UI/icons/community.svg";
+import programmingIcon from "../../../UI/categories/programming.svg";
+import designIcon from "../../../UI/categories/design.svg";
+import businessIcon from "../../../UI/categories/business.svg";
+import marketingIcon from "../../../UI/categories/marketing.svg";
+import languagesIcon from "../../../UI/categories/languages.svg";
+import analyticsIcon from "../../../UI/categories/analytics.svg";
 import "./StyleHomePage.css";
 import "../Sidebar/StyleSidebar.css";
 
@@ -62,21 +74,21 @@ interface Category {
 }
 
 const categories: Category[] = [
-  { title: "IT и программирование", icon: "</>", color: "#4F46E5" },
-  { title: "Дизайн", icon: "🎨", color: "#EC4899" },
-  { title: "Бизнес и управление", icon: "📊", color: "#10B981" },
-  { title: "Маркетинг", icon: "📢", color: "#F97316" },
-  { title: "Гуманитарные науки", icon: "📚", color: "#8B5CF6" },
-  { title: "Языки", icon: "🌍", color: "#3B82F6" },
+  { title: "IT и программирование", icon: programmingIcon, color: "#4F46E5" },
+  { title: "Дизайн", icon: designIcon, color: "#EC4899" },
+  { title: "Бизнес и управление", icon: businessIcon, color: "#10B981" },
+  { title: "Маркетинг", icon: marketingIcon, color: "#F97316" },
+  { title: "Гуманитарные науки", icon: analyticsIcon, color: "#8B5CF6" },
+  { title: "Языки", icon: languagesIcon, color: "#3B82F6" },
   { title: "Все категории", icon: "•••", color: "#6B7280" },
 ];
 
 // --- Feature card data ---
 const features = [
-  { icon: "⏰", title: "Гибкий формат", desc: "Учись в удобное время и в своём темпе" },
-  { icon: "✏️", title: "Практические задания", desc: "Закрепляй знания на реальных кейсах" },
-  { icon: "📜", title: "Сертификаты", desc: "Подтверждай свои навыки и добавляй в резюме" },
-  { icon: "👥", title: "Сообщество", desc: "Общайся с единомышленниками и экспертами" },
+  { icon: clockIcon, title: "Гибкий формат", desc: "Учись в удобное время и в своём темпе" },
+  { icon: taskIcon, title: "Практические задания", desc: "Закрепляй знания на реальных кейсах" },
+  { icon: certificateIcon, title: "Сертификаты", desc: "Подтверждай свои навыки и добавляй в резюме" },
+  { icon: communityIcon, title: "Сообщество", desc: "Общайся с единомышленниками и экспертами" },
 ];
 
 // --- Course Card ---
@@ -103,7 +115,7 @@ function CourseCard({ course }: { course: Course }) {
         <div className="sl-course-card__image-placeholder" style={{
           background: `linear-gradient(135deg, ${getCategoryColor()}22, ${getCategoryColor()}44)`
         }}>
-          <span style={{ fontSize: "2rem" }}>📘</span>
+          <img src={courseIcon} alt="" className="sl-course-card__image-mark" />
         </div>
       </div>
       <div className="sl-course-card__body">
@@ -141,7 +153,9 @@ function MyCourseItem({ course }: { course: Course }) {
   const pct = course.progress_percentage || 0;
   return (
     <Link to={`/course/${course.id}`} className="sl-my-course">
-      <div className="sl-my-course__icon">📘</div>
+      <div className="sl-my-course__icon">
+        <img src={courseIcon} alt="" className="sl-my-course__icon-image" />
+      </div>
       <div className="sl-my-course__info">
         <div className="sl-my-course__title">{course.title}</div>
         <div className="sl-my-course__lesson">
@@ -252,7 +266,7 @@ function HomePage() {
       <div className="sl-layout">
         <Sidebar />
 
-        <main className="sl-main">
+        <main className="sl-main sl-page-shell--wide">
           {/* Hero Banner */}
           <section className="sl-hero">
             <div className="sl-hero__content">
@@ -269,16 +283,23 @@ function HomePage() {
                 <Link to="/catalog" className="sl-hero__btn sl-hero__btn--primary">
                   Начать обучение →
                 </Link>
-                <button className="sl-hero__btn sl-hero__btn--secondary">
-                  ▶ Как это работает
+                <button className="sl-hero__btn sl-hero__btn--secondary" type="button">
+                  Как это работает
                 </button>
               </div>
             </div>
             <div className="sl-hero__illustration">
               <div className="sl-hero__illustration-box">
-                <div className="sl-hero__float sl-hero__float--1">🎓</div>
-                <div className="sl-hero__float sl-hero__float--2">💻</div>
-                <div className="sl-hero__float sl-hero__float--3">📊</div>
+                <img src={brandMark} alt="" className="sl-hero__brand-mark" />
+                <div className="sl-hero__float sl-hero__float--1">
+                  <img src={courseIcon} alt="" className="sl-hero__float-icon" />
+                </div>
+                <div className="sl-hero__float sl-hero__float--2">
+                  <img src={taskIcon} alt="" className="sl-hero__float-icon" />
+                </div>
+                <div className="sl-hero__float sl-hero__float--3">
+                  <img src={certificateIcon} alt="" className="sl-hero__float-icon" />
+                </div>
                 <div className="sl-hero__illu-text">Знания<br/>открывают<br/>возможности</div>
               </div>
             </div>
@@ -288,7 +309,9 @@ function HomePage() {
           <section className="sl-features">
             {features.map((f, i) => (
               <div key={i} className="sl-feature">
-                <div className="sl-feature__icon">{f.icon}</div>
+                <div className="sl-feature__icon">
+                  <img src={f.icon} alt="" className="sl-feature__icon-image" />
+                </div>
                 <div>
                   <div className="sl-feature__title">{f.title}</div>
                   <div className="sl-feature__desc">{f.desc}</div>
@@ -341,7 +364,11 @@ function HomePage() {
                     background: `${cat.color}15`,
                     color: cat.color,
                   }}>
-                    {cat.icon}
+                    {typeof cat.icon === "string" && cat.icon.startsWith("data:image") ? (
+                      <img src={cat.icon} alt="" className="sl-category__icon-image" />
+                    ) : (
+                      <img src={cat.icon as string} alt="" className="sl-category__icon-image" />
+                    )}
                   </div>
                   <span className="sl-category__title">{cat.title}</span>
                 </Link>

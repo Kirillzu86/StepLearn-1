@@ -133,7 +133,7 @@
   конфигурации валидируются с `.env.example`. Полный clean deployment ещё не
   проверен.
 - [x] Сделать очередь Redis persistent и включить late-ack/requeue, task-ID idempotency и восстановление Celery delivery после потери worker.
-- [ ] Настроить CORS, CSRF, rate limiting и secure cookie/token policy.
+- [x] Настроить CORS, CSRF, rate limiting и secure cookie/token policy: backend использует безопасные defaults, проверяет trusted origins и throttling для анонимных/авторизованных запросов; production policy управляется env vars.
 - [x] Добавить CI для backend tests/migration checks, Student/Teacher type-check/build/tests и runner unit/sandbox integration tests; existing full-repo ESLint issues are not gated yet.
 
 ## 9. Финальная проверка Definition of Done

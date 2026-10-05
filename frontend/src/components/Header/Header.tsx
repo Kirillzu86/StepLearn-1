@@ -1,15 +1,42 @@
 // frontend/src/components/Header/Header.tsx
 
 import React, { useEffect, useState } from 'react';
-import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { FiSearch, FiSettings, FiBell, FiChevronDown, FiSun, FiMoon } from 'react-icons/fi';
+import { useNavigate, Link } from 'react-router-dom';
+import { FiChevronDown, FiSun, FiMoon } from 'react-icons/fi';
 import { TEACHER_APP_URL } from '../../api/appUrls';
+import brandLogo from '../../../UI/brand/steplearn-logo.svg';
+import searchIcon from '../../../UI/icons/search.svg';
+import settingsIcon from '../../../UI/icons/settings.svg';
+import bellIcon from '../../../UI/icons/bell.svg';
 import './StyleHeader.css';
 
+type CurrentUser = {
+    username?: string;
+    name?: string;
+    email?: string;
+    role?: string;
+    is_staff?: boolean;
+    avatar_url?: string;
+    access?: string;
+    refresh?: string;
+    must_change_password?: boolean;
+};
+
+const readCurrentUserFromStorage = (): CurrentUser | null => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('currentUser') : null;
+    if (!raw) {
+        return null;
+    }
+    try {
+        return JSON.parse(raw) as CurrentUser;
+    } catch {
+        return null;
+    }
+};
+
 const Header: React.FC = () => {
-    const location = useLocation();
     const navigate = useNavigate();
-    const [currentUser, setCurrentUser] = useState<any>(null);
+    const [currentUser, setCurrentUser] = useState<CurrentUser | null>(readCurrentUserFromStorage);
     const [searchQuery, setSearchQuery] = useState('');
     const [userMenuOpen, setUserMenuOpen] = useState(false);
     const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -24,38 +51,18 @@ const Header: React.FC = () => {
     };
 
     useEffect(() => {
-        const raw = localStorage.getItem('currentUser');
-        try {
-            setCurrentUser(raw ? JSON.parse(raw) : null);
-        } catch (e) {
-            setCurrentUser(null);
-        }
-    }, [location]);
-
-    useEffect(() => {
         const onStorage = (e: StorageEvent) => {
             if (e.key === 'currentUser') {
-                try {
-                    setCurrentUser(e.newValue ? JSON.parse(e.newValue) : null);
-                } catch {
-                    setCurrentUser(null);
-                }
+                setCurrentUser(readCurrentUserFromStorage());
             }
         };
         const onCurrentUserChanged = (ev: Event) => {
-            try {
-                const ce = ev as CustomEvent;
-                if (ce && ce.detail) {
-                    setCurrentUser(ce.detail);
-                    return;
-                }
-            } catch {}
-            const raw = localStorage.getItem('currentUser');
-            try {
-                setCurrentUser(raw ? JSON.parse(raw) : null);
-            } catch {
-                setCurrentUser(null);
+            const ce = ev as CustomEvent<CurrentUser | undefined>;
+            if (ce?.detail) {
+                setCurrentUser(ce.detail);
+                return;
             }
+            setCurrentUser(readCurrentUserFromStorage());
         };
         window.addEventListener('storage', onStorage);
         window.addEventListener('currentUserChanged', onCurrentUserChanged as EventListener);
@@ -85,22 +92,15 @@ const Header: React.FC = () => {
     return (
         <header className="sl-header">
             {/* Logo */}
-            <Link to="/" className="sl-header__logo">
+            <Link to="/" className="sl-header__logo" aria-label="StepLearn home">
                 <div className="sl-header__logo-icon">
-                    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                        <path d="M14 2L24 8V20L14 26L4 20V8L14 2Z" fill="#4F46E5"/>
-                        <path d="M14 8L19 11V17L14 20L9 17V11L14 8Z" fill="white"/>
-                    </svg>
-                </div>
-                <div className="sl-header__logo-text">
-                    <span className="sl-header__logo-name">StepLearn</span>
-                    <span className="sl-header__logo-tagline">Учись. Развивайся. Достигай.</span>
+                    <img src={brandLogo} alt="StepLearn" className="sl-header__logo-image" />
                 </div>
             </Link>
 
             {/* Search */}
             <form className="sl-header__search" onSubmit={handleSearch}>
-                <FiSearch className="sl-header__search-icon" />
+                <img src={searchIcon} alt="" className="sl-header__search-icon" />
                 <input
                     type="text"
                     className="sl-header__search-input"
@@ -121,10 +121,10 @@ const Header: React.FC = () => {
                     {theme === 'dark' ? <FiSun style={{ color: '#f59e0b' }} /> : <FiMoon style={{ color: '#6366f1' }} />}
                 </button>
                 <button className="sl-header__icon-btn" aria-label="Настройки" onClick={() => navigate('/settings')}>
-                    <FiSettings />
+                    <img src={settingsIcon} alt="" className="sl-header__action-icon" />
                 </button>
                 <button className="sl-header__icon-btn sl-header__icon-btn--notif" aria-label="Уведомления" onClick={() => navigate('/notifications')}>
-                    <FiBell />
+                    <img src={bellIcon} alt="" className="sl-header__action-icon" />
                     <span className="sl-header__notif-badge">3</span>
                 </button>
 
@@ -167,7 +167,11 @@ const Header: React.FC = () => {
                                 <button className="sl-header__dropdown-item sl-header__dropdown-item--danger" onClick={() => {
                                     localStorage.removeItem('currentUser');
                                     setCurrentUser(null);
-                                    try { window.dispatchEvent(new CustomEvent('currentUserChanged')); } catch {}
+                                    try {
+                                        window.dispatchEvent(new CustomEvent('currentUserChanged'));
+                                    } catch {
+                                        window.dispatchEvent(new Event('currentUserChanged'));
+                                    }
                                     navigate('/login');
                                 }}>
                                     Выйти

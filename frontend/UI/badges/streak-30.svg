@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 72">
+<rect width="260" height="72" rx="36" fill="#EA580C" opacity=".10"/>
+<circle cx="36" cy="36" r="24" fill="#EA580C"/>
+<text x="36" y="44" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="20" font-weight="800" fill="#fff">30</text>
+<text x="75" y="43" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="700" fill="#17213B">30 дней</text>
+</svg>

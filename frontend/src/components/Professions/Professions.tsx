@@ -2,7 +2,7 @@ import React from "react";
 import Header from "../Header/Header";
 import Sidebar from "../Sidebar/sidebar";
 import { Link } from "react-router-dom";
-import { FiBriefcase, FiCheck, FiArrowRight, FiClock, FiStar, FiLayers } from "react-icons/fi";
+import { FiCheck, FiArrowRight, FiClock, FiStar, FiLayers } from "react-icons/fi";
 import "../HomePage/StyleHomePage.css";
 import "../Sidebar/StyleSidebar.css";
 import "./StyleProfessions.css";
@@ -76,13 +76,13 @@ const professionList: Profession[] = [
   },
 ];
 
-export default function Professions({ theme, toggleTheme }: { theme: "dark" | "light"; toggleTheme: () => void }) {
+export default function Professions() {
   return (
     <div className="sl-app">
       <Header />
       <div className="sl-layout">
         <Sidebar />
-        <main className="sl-main">
+        <main className="sl-main sl-page-shell">
           <div className="sl-prof-container">
             {/* Header */}
             <div className="sl-prof-header">

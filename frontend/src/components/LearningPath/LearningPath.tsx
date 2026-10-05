@@ -2,7 +2,7 @@ import React from "react";
 import Header from "../Header/Header";
 import Sidebar from "../Sidebar/sidebar";
 import { Link } from "react-router-dom";
-import { FiCheckCircle, FiPlayCircle, FiLock, FiAward, FiArrowRight } from "react-icons/fi";
+import { FiCheckCircle, FiPlayCircle, FiLock, FiArrowRight } from "react-icons/fi";
 import "../HomePage/StyleHomePage.css";
 import "../Sidebar/StyleSidebar.css";
 import "./StyleLearningPath.css";
@@ -51,13 +51,13 @@ const pathSteps: Step[] = [
   },
 ];
 
-export default function LearningPath({ theme, toggleTheme }: { theme: "dark" | "light"; toggleTheme: () => void }) {
+export default function LearningPath() {
   return (
     <div className="sl-app">
       <Header />
       <div className="sl-layout">
         <Sidebar />
-        <main className="sl-main">
+        <main className="sl-main sl-page-shell">
           <div className="sl-lp-container">
             <div className="sl-lp-header">
               <span className="sl-lp-tag">Персональная траектория</span>

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import Header from "../Header/Header";
 import Sidebar from "../Sidebar/sidebar";
-import { FiCalendar as FiCalIcon, FiClock, FiVideo, FiBook, FiCheckCircle, FiChevronLeft, FiChevronRight } from "react-icons/fi";
+import { FiClock, FiVideo, FiBook, FiCheckCircle, FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import "../HomePage/StyleHomePage.css";
 import "../Sidebar/StyleSidebar.css";
 import "./StyleCalendar.css";
@@ -23,7 +23,7 @@ const eventList: CalendarEvent[] = [
   { id: 5, date: 25, title: "Дедлайн проекта: Реактивный интернет-магазин", course: "React & TS", time: "До 23:59", type: "deadline" },
 ];
 
-export default function Calendar({ theme, toggleTheme }: { theme: "dark" | "light"; toggleTheme: () => void }) {
+export default function Calendar() {
   const [selectedDay, setSelectedDay] = useState<number>(2);
 
   const daysInMonth = Array.from({ length: 30 }, (_, i) => i + 1);
@@ -46,7 +46,7 @@ export default function Calendar({ theme, toggleTheme }: { theme: "dark" | "ligh
       <Header />
       <div className="sl-layout">
         <Sidebar />
-        <main className="sl-main">
+        <main className="sl-main sl-page-shell">
           <div className="sl-cal-container">
             <div className="sl-cal-header">
               <div>

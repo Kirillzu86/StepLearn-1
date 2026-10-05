@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Header from "../Header/Header";
 import Sidebar from "../Sidebar/sidebar";
 import { FiUser, FiMoon, FiSun, FiBell, FiShield, FiCheck, FiSave, FiLock } from "react-icons/fi";
@@ -11,11 +11,19 @@ interface SettingsProps {
   toggleTheme: () => void;
 }
 
+type CurrentUser = {
+  username?: string;
+  name?: string;
+  email?: string;
+  bio?: string;
+  [key: string]: unknown;
+};
+
 export default function Settings({ theme, toggleTheme }: SettingsProps) {
   const [activeTab, setActiveTab] = useState<"profile" | "appearance" | "notifications" | "security">("profile");
 
   // User state from localStorage
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
 
   // Profile form
   const [username, setUsername] = useState("");
@@ -36,16 +44,15 @@ export default function Settings({ theme, toggleTheme }: SettingsProps) {
   const [savedMessage, setSavedMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
-  useEffect(() => {
+  React.useEffect(() => {
     try {
       const raw = localStorage.getItem("currentUser");
-      if (raw) {
-        const u = JSON.parse(raw);
-        setCurrentUser(u);
-        setUsername(u.username || u.name || "");
-        setEmail(u.email || "");
-        setBio(u.bio || "Студент платформы StepLearn");
-      }
+      if (!raw) return;
+      const u = JSON.parse(raw) as CurrentUser;
+      setCurrentUser(u);
+      setUsername(u.username || u.name || "");
+      setEmail(u.email || "");
+      setBio(u.bio || "Студент платформы StepLearn");
     } catch (e) {
       console.error(e);
     }
@@ -63,7 +70,9 @@ export default function Settings({ theme, toggleTheme }: SettingsProps) {
 
     try {
       window.dispatchEvent(new CustomEvent("currentUserChanged", { detail: updated }));
-    } catch {}
+    } catch {
+      window.dispatchEvent(new Event("currentUserChanged"));
+    }
 
     setErrorMessage("");
     setSavedMessage("Настройки профиля успешно сохранены!");
@@ -98,7 +107,7 @@ export default function Settings({ theme, toggleTheme }: SettingsProps) {
       <Header />
       <div className="sl-layout">
         <Sidebar />
-        <main className="sl-main">
+        <main className="sl-main sl-page-shell">
           <div className="sl-settings-container">
             {/* Page Title */}
             <div className="sl-settings-header">

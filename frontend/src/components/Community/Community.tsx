@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import Header from "../Header/Header";
 import Sidebar from "../Sidebar/sidebar";
-import { FiMessageSquare, FiThumbsUp, FiUser, FiPlus, FiSearch, FiTag } from "react-icons/fi";
+import { FiMessageSquare, FiThumbsUp, FiPlus, FiSearch, FiTag } from "react-icons/fi";
 import "../HomePage/StyleHomePage.css";
 import "../Sidebar/StyleSidebar.css";
 import "./StyleCommunity.css";
@@ -51,7 +51,7 @@ const initialPosts: Post[] = [
   },
 ];
 
-export default function Community({ theme, toggleTheme }: { theme: "dark" | "light"; toggleTheme: () => void }) {
+export default function Community() {
   const [posts, setPosts] = useState<Post[]>(initialPosts);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeCategory, setActiveCategory] = useState("Все темы");
@@ -104,7 +104,7 @@ export default function Community({ theme, toggleTheme }: { theme: "dark" | "lig
       <Header />
       <div className="sl-layout">
         <Sidebar />
-        <main className="sl-main">
+        <main className="sl-main sl-page-shell">
           <div className="sl-comm-container">
             {/* Header */}
             <div className="sl-comm-header">

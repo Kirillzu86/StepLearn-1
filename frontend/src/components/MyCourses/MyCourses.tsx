@@ -76,7 +76,7 @@ export default function MyCourses() {
       <Header />
       <div className="sl-layout">
         <Sidebar />
-        <main className="sl-main">
+        <main className="sl-main sl-page-shell">
           <div className="sl-myc-container">
             <div className="sl-myc-header">
               <h1 className="sl-myc-title">Мои курсы</h1>
