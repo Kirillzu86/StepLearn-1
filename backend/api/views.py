@@ -1,5 +1,6 @@
 # AI-GENERATED: Antigravity
 import datetime
+import os
 import re
 import secrets
 import uuid
@@ -123,10 +124,34 @@ def course_list_item(course, enrollment=None, *, enrolled=False):
 
 @api_view(['GET'])
 def health_check(request):
-    with connection.cursor() as cursor:
-        cursor.execute('SELECT 1')
-        cursor.fetchone()
-    return Response({'status': 'ok', 'database': 'ok'})
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+            cursor.fetchone()
+    except Exception as exc:
+        return Response(
+            {'status': 'error', 'database': str(exc)},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    redis_status = 'not_configured'
+    broker_url = os.getenv('CELERY_BROKER_URL') or os.getenv('REDIS_URL')
+    if broker_url and broker_url.startswith(('redis://', 'rediss://')):
+        try:
+            import redis
+            client = redis.Redis.from_url(broker_url, socket_timeout=1)
+            if client.ping():
+                redis_status = 'ok'
+            else:
+                redis_status = 'unresponsive'
+        except Exception:
+            redis_status = 'unreachable'
+
+    return Response({
+        'status': 'ok',
+        'database': 'ok',
+        'redis': redis_status,
+    })
 
 
 def course_learning_progress(user, course):

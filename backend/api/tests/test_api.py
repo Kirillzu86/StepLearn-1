@@ -41,7 +41,9 @@ class StepLearnAPITests(APITestCase):
         response = self.client.get('/health/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, {'status': 'ok', 'database': 'ok'})
+        self.assertEqual(response.data['status'], 'ok')
+        self.assertEqual(response.data['database'], 'ok')
+        self.assertIn('redis', response.data)
 
     def test_role_profiles_are_created_for_student_and_teacher_accounts(self):
         self.assertEqual(
@@ -191,14 +193,15 @@ class StepLearnAPITests(APITestCase):
         }, format='json')
         self.assertEqual(refresh_response.status_code, 200)
         self.assertIn('access', refresh_response.data)
+        current_refresh = refresh_response.data.get('refresh', refresh)
 
         logout_response = self.client.post('/auth/logout', {
-            'refresh': refresh
+            'refresh': current_refresh
         }, format='json')
         self.assertEqual(logout_response.status_code, 205)
 
         rejected_refresh = self.client.post('/auth/refresh', {
-            'refresh': refresh
+            'refresh': current_refresh
         }, format='json')
         self.assertEqual(rejected_refresh.status_code, 401)
 

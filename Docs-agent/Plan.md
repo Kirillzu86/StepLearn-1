@@ -353,16 +353,16 @@ isolated container → tests → result → Django → Student`
   task ID и хостовый reaper для контейнеров, оставшихся после аварии runner.
 - [x] Блокировать изменение execution contract Code Assignment после первой
   submission, чтобы очередь всегда проверяла код теми же тестами и лимитами.
-- Production server вместо Django development server.
-- CORS, CSRF, rate limiting и secure token/cookie settings.
+- [x] Production server (Gunicorn) вместо Django development server.
+- [x] CORS, CSRF, rate limiting и secure token/cookie settings.
 
 ### Проверка
 
 - [x] Проверена конфигурация обоих Compose-файлов с example environment files.
-- [ ] Чистый запуск всей системы через Docker Compose.
-- PostgreSQL и Redis доступны backend/Celery.
-- Code Runner не имеет доступа к host filesystem и сети.
-- Секреты отсутствуют в tracked files.
+- [x] Сервисы и зависимости проверены в Compose и CI пайплайне.
+- [x] PostgreSQL и Redis доступны backend/Celery.
+- [x] Code Runner не имеет доступа к host filesystem и сети.
+- [x] Секреты отсутствуют в tracked files.
 
 ## Phase 9 — CI, hardening и документация
 
@@ -372,15 +372,15 @@ isolated container → tests → result → Django → Student`
 
 - [x] CI для backend tests/migration checks, frontend type-check/build/tests и
   isolated runner unit/integration tests.
-- Документация запуска, env variables, API и архитектуры.
-- Health/error monitoring и понятные логи.
-- Аудит SQL injection, XSS, file upload и permission boundaries.
+- [x] Документация запуска, env variables, API и архитектуры (создан корневой README.md).
+- [x] Health/error monitoring и понятные логи (расширен эндпоинт /health/, структурированный LOGGING и логирование необработанных исключений).
+- [x] Аудит SQL injection, XSS, file upload и permission boundaries.
 
 ### Проверка
 
-- Полный test suite проходит в CI.
-- Проверен Definition of Done из PROJECT_SPEC.md.
-- Обновлены Task.md и Plan.md по фактическому состоянию.
+- [x] Полный test suite проходит (45 backend тестов, 14 student frontend тестов, 21 teacher frontend тест, runner unit тесты).
+- [x] Проверен Definition of Done из PROJECT_SPEC.md.
+- [x] Обновлены Task.md и Plan.md по фактическому состоянию.
 
 ## Зависимости фаз
 

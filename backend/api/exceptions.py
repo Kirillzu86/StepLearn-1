@@ -1,8 +1,16 @@
+import logging
 from rest_framework.views import exception_handler
+
+logger = logging.getLogger(__name__)
 
 
 def custom_exception_handler(exc, context):
     response = exception_handler(exc, context)
+
+    if response is None:
+        view = context.get('view', None)
+        view_name = view.__class__.__name__ if view else 'unknown_view'
+        logger.exception('Unhandled exception in %s: %s', view_name, exc)
 
     if response is not None:
         if isinstance(response.data, dict):
